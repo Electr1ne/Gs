@@ -2,10 +2,10 @@ import asyncio
 import logging
 import os
 import random
+import sqlite3
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Union
 
-import aiosqlite
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.enums import ChatMemberStatus, ChatType, ParseMode
 from aiogram.filters import Command, CommandStart
@@ -46,6 +46,31 @@ dp.include_router(router)
 # Кэш для защиты от спама в группах (anti-flood)
 user_last_reward_time: Dict[int, datetime] = {}
 user_last_msg_time: Dict[int, datetime] = {}
+
+# ==============================================================================
+# ВСПОМОГАТЕЛЬНЫЙ АСИНХРОННЫЙ АДАПТЕР ДЛЯ SQLITE3
+# ==============================================================================
+
+def _db_execute(query: str, params: tuple = (), fetchone: bool = False, fetchall: bool = False, commit: bool = True):
+    with sqlite3.connect(DATABASE_PATH) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        cursor.execute(query, params)
+        result = None
+        if fetchone:
+            row = cursor.fetchone()
+            result = dict(row) if row else None
+        elif fetchall:
+            rows = cursor.fetchall()
+            result = [dict(r) for r in rows]
+        else:
+            result = cursor.lastrowid
+        if commit:
+            conn.commit()
+        return result
+
+async def db_query(query: str, params: tuple = (), fetchone: bool = False, fetchall: bool = False, commit: bool = True):
+    return await asyncio.to_thread(_db_execute, query, params, fetchone, fetchall, commit)
 
 # ==============================================================================
 # СИСТЕМА ЛОКАЛИЗАЦИИ И СТРОКИ ТЕКСТОВ
@@ -207,230 +232,185 @@ def get_str(key: str, lang: str = "ru", **kwargs) -> str:
 # ==============================================================================
 
 async def init_db():
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        # Пользователи
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                telegram_id INTEGER UNIQUE,
-                username TEXT,
-                first_name TEXT,
-                balance REAL DEFAULT 0.0,
-                language TEXT DEFAULT 'ru',
-                register_date TEXT,
-                last_activity TEXT,
-                last_bonus TEXT,
-                is_banned INTEGER DEFAULT 0,
-                ban_until TEXT
-            )
-        """)
-        # Группы
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS groups (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                chat_id INTEGER UNIQUE,
-                title TEXT,
-                added_by INTEGER,
-                created_at TEXT,
-                status INTEGER DEFAULT 1
-            )
-        """)
-        # Выводы
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS withdraws (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                amount REAL,
-                status TEXT DEFAULT 'new',
-                created_at TEXT,
-                updated_at TEXT,
-                admin_id INTEGER DEFAULT 0,
-                reject_reason TEXT DEFAULT ''
-            )
-        """)
-        # Администраторы
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS admins (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                telegram_id INTEGER UNIQUE,
-                created_at TEXT,
-                added_by INTEGER
-            )
-        """)
-        # Права администраторов
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS permissions (
-                admin_id INTEGER,
-                permission_name TEXT,
-                enabled INTEGER DEFAULT 1,
-                PRIMARY KEY (admin_id, permission_name)
-            )
-        """)
-        # Настройки и Модули
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS settings (
-                key TEXT PRIMARY KEY,
-                value TEXT
-            )
-        """)
-        # История админ действий
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                admin_id INTEGER,
-                user_id INTEGER,
-                action TEXT,
-                old_value TEXT,
-                new_value TEXT,
-                created_at TEXT
-            )
-        """)
-        # История бонусов
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS bonus_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                amount REAL,
-                created_at TEXT
-            )
-        """)
-        # История сообщений
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS messages_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
-                group_id INTEGER,
-                created_at TEXT
-            )
-        """)
+    queries = [
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            telegram_id INTEGER UNIQUE,
+            username TEXT,
+            first_name TEXT,
+            balance REAL DEFAULT 0.0,
+            language TEXT DEFAULT 'ru',
+            register_date TEXT,
+            last_activity TEXT,
+            last_bonus TEXT,
+            is_banned INTEGER DEFAULT 0,
+            ban_until TEXT
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS groups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_id INTEGER UNIQUE,
+            title TEXT,
+            added_by INTEGER,
+            created_at TEXT,
+            status INTEGER DEFAULT 1
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS withdraws (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            amount REAL,
+            status TEXT DEFAULT 'new',
+            created_at TEXT,
+            updated_at TEXT,
+            admin_id INTEGER DEFAULT 0,
+            reject_reason TEXT DEFAULT ''
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS admins (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            telegram_id INTEGER UNIQUE,
+            created_at TEXT,
+            added_by INTEGER
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS permissions (
+            admin_id INTEGER,
+            permission_name TEXT,
+            enabled INTEGER DEFAULT 1,
+            PRIMARY KEY (admin_id, permission_name)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_id INTEGER,
+            user_id INTEGER,
+            action TEXT,
+            old_value TEXT,
+            new_value TEXT,
+            created_at TEXT
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS bonus_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            amount REAL,
+            created_at TEXT
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS messages_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            group_id INTEGER,
+            created_at TEXT
+        )
+        """
+    ]
+    for q in queries:
+        await db_query(q)
 
-        # Значения по умолчанию для настроек и модулей
-        default_settings = {
-            # Модули (1 - вкл, 0 - выкл)
-            "mod_rewards": "1",
-            "mod_withdraws": "1",
-            "mod_bonus": "1",
-            "mod_sub_check": "1",
-            "mod_groups": "1",
-            "mod_broadcast": "1",
-            # Настройки антифлуда и выводов
-            "min_msg_len": "5",
-            "antiflood_cooldown": "30",
-            "withdraw_cooldown": "300", # в секундах (5 минут)
-            "msg_reward_chance": "15", # процент 15%
-            # Шансы для диапазонов сообщений (проценты)
-            "rng_0.01_0.10": "70",
-            "rng_0.10_0.50": "20",
-            "rng_0.50_1.00": "7",
-            "rng_1.00_2.00": "2",
-            "rng_2.00_3.00": "0.8",
-            "rng_3.00_4.00": "0.15",
-            "rng_4.00_5.00": "0.05",
-            # Ежедневный бонус
-            "bonus_min": "0.01",
-            "bonus_max": "2.00"
-        }
+    default_settings = {
+        "mod_rewards": "1",
+        "mod_withdraws": "1",
+        "mod_bonus": "1",
+        "mod_sub_check": "1",
+        "mod_groups": "1",
+        "mod_broadcast": "1",
+        "min_msg_len": "5",
+        "antiflood_cooldown": "30",
+        "withdraw_cooldown": "300",
+        "msg_reward_chance": "15",
+        "rng_0.01_0.10": "70",
+        "rng_0.10_0.50": "20",
+        "rng_0.50_1.00": "7",
+        "rng_1.00_2.00": "2",
+        "rng_2.00_3.00": "0.8",
+        "rng_3.00_4.00": "0.15",
+        "rng_4.00_5.00": "0.05",
+        "bonus_min": "0.01",
+        "bonus_max": "2.00"
+    }
 
-        for k, v in default_settings.items():
-            await db.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v))
+    for k, v in default_settings.items():
+        await db_query("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v))
 
-        # Добавляем владельца в список админов
-        now_str = datetime.now().isoformat()
-        await db.execute("INSERT OR IGNORE INTO admins (telegram_id, created_at, added_by) VALUES (?, ?, ?)",
-                         (OWNER_ID, now_str, OWNER_ID))
-        for perm in ALL_PERMISSIONS:
-            await db.execute("INSERT OR IGNORE INTO permissions (admin_id, permission_name, enabled) VALUES (?, ?, 1)",
-                             (OWNER_ID, perm))
-
-        await db.commit()
+    now_str = datetime.now().isoformat()
+    await db_query("INSERT OR IGNORE INTO admins (telegram_id, created_at, added_by) VALUES (?, ?, ?)",
+                   (OWNER_ID, now_str, OWNER_ID))
+    for perm in ALL_PERMISSIONS:
+        await db_query("INSERT OR IGNORE INTO permissions (admin_id, permission_name, enabled) VALUES (?, ?, 1)",
+                       (OWNER_ID, perm))
 
 # Вспомогательные функции взаимодействия с БД
 
 async def get_setting(key: str, default: str = "") -> str:
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        async with db.execute("SELECT value FROM settings WHERE key = ?", (key,)) as cursor:
-            row = await cursor.fetchone()
-            return row[0] if row else default
+    res = await db_query("SELECT value FROM settings WHERE key = ?", (key,), fetchone=True)
+    return res["value"] if res else default
 
 async def set_setting(key: str, value: str):
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        await db.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, str(value)))
-        await db.commit()
+    await db_query("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, str(value)))
 
 async def get_user(telegram_id: int) -> Optional[Dict[str, Any]]:
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,)) as cursor:
-            row = await cursor.fetchone()
-            return dict(row) if row else None
+    return await db_query("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,), fetchone=True)
 
 async def create_user(telegram_id: int, username: str, first_name: str) -> Dict[str, Any]:
     now = datetime.now().isoformat()
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        await db.execute("""
-            INSERT INTO users (telegram_id, username, first_name, register_date, last_activity)
-            VALUES (?, ?, ?, ?, ?)
-        """, (telegram_id, username or "", first_name or "", now, now))
-        await db.commit()
+    await db_query("""
+        INSERT INTO users (telegram_id, username, first_name, register_date, last_activity)
+        VALUES (?, ?, ?, ?, ?)
+    """, (telegram_id, username or "", first_name or "", now, now))
     return await get_user(telegram_id)
 
 async def update_user_activity(telegram_id: int):
     now = datetime.now().isoformat()
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        await db.execute("UPDATE users SET last_activity = ? WHERE telegram_id = ?", (now, telegram_id))
-        await db.commit()
+    await db_query("UPDATE users SET last_activity = ? WHERE telegram_id = ?", (now, telegram_id))
 
 async def update_user_balance(telegram_id: int, delta: float) -> float:
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        await db.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (delta, telegram_id))
-        await db.commit()
-        async with db.execute("SELECT balance FROM users WHERE telegram_id = ?", (telegram_id,)) as cursor:
-            row = await cursor.fetchone()
-            return row[0] if row else 0.0
+    await db_query("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (delta, telegram_id))
+    res = await db_query("SELECT balance FROM users WHERE telegram_id = ?", (telegram_id,), fetchone=True)
+    return res["balance"] if res else 0.0
 
 async def set_user_language(telegram_id: int, lang: str):
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        await db.execute("UPDATE users SET language = ? WHERE telegram_id = ?", (lang, telegram_id))
-        await db.commit()
+    await db_query("UPDATE users SET language = ? WHERE telegram_id = ?", (lang, telegram_id))
 
 async def is_admin(telegram_id: int) -> bool:
     if telegram_id == OWNER_ID:
         return True
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        async with db.execute("SELECT id FROM admins WHERE telegram_id = ?", (telegram_id,)) as cursor:
-            row = await cursor.fetchone()
-            return row is not None
+    res = await db_query("SELECT id FROM admins WHERE telegram_id = ?", (telegram_id,), fetchone=True)
+    return res is not None
 
 async def has_perm(telegram_id: int, perm_name: str) -> bool:
     if telegram_id == OWNER_ID:
         return True
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        async with db.execute("""
-            SELECT enabled FROM permissions 
-            WHERE admin_id = ? AND permission_name = ?
-        """, (telegram_id, perm_name)) as cursor:
-            row = await cursor.fetchone()
-            if row and row[0] == 1:
-                return True
-        # Проверка на полный доступ
-        async with db.execute("""
-            SELECT enabled FROM permissions 
-            WHERE admin_id = ? AND permission_name = 'full_access'
-        """, (telegram_id,)) as cursor:
-            row = await cursor.fetchone()
-            return row is not None and row[0] == 1
+    res = await db_query("SELECT enabled FROM permissions WHERE admin_id = ? AND permission_name = ?", (telegram_id, perm_name), fetchone=True)
+    if res and res["enabled"] == 1:
+        return True
+    res_full = await db_query("SELECT enabled FROM permissions WHERE admin_id = ? AND permission_name = 'full_access'", (telegram_id,), fetchone=True)
+    return res_full is not None and res_full["enabled"] == 1
 
 async def log_admin_action(admin_id: int, user_id: int, action: str, old_val: str, new_val: str):
     now = datetime.now().isoformat()
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        await db.execute("""
-            INSERT INTO history (admin_id, user_id, action, old_value, new_value, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (admin_id, user_id, action, str(old_val), str(new_val), now))
-        await db.commit()
+    await db_query("""
+        INSERT INTO history (admin_id, user_id, action, old_value, new_value, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (admin_id, user_id, action, str(old_val), str(new_val), now))
 
 # ==============================================================================
-# ПРОВЕРКА ПОДПИСКИ И БАНА (MIDDLEWARE & HELPERS)
+# ПРОВЕРКА ПОДПИСКИ И БАНА
 # ==============================================================================
 
 async def check_channel_subscription(user_id: int) -> bool:
@@ -445,7 +425,7 @@ async def check_channel_subscription(user_id: int) -> bool:
             ChatMemberStatus.CREATOR,
         ]
     except Exception as e:
-        logging.error(f" Ошибка проверки подписки пользователя {user_id}: {e}")
+        logging.error(f"Ошибка проверки подписки пользователя {user_id}: {e}")
         return True
 
 async def check_user_ban_status(user: Dict[str, Any]) -> bool:
@@ -455,9 +435,7 @@ async def check_user_ban_status(user: Dict[str, Any]) -> bool:
     if ban_until_str:
         ban_until = datetime.fromisoformat(ban_until_str)
         if datetime.now() > ban_until:
-            async with aiosqlite.connect(DATABASE_PATH) as db:
-                await db.execute("UPDATE users SET is_banned = 0, ban_until = NULL WHERE telegram_id = ?", (user["telegram_id"],))
-                await db.commit()
+            await db_query("UPDATE users SET is_banned = 0, ban_until = NULL WHERE telegram_id = ?", (user["telegram_id"],))
             return False
     return True
 
@@ -530,7 +508,7 @@ class AdminFSM(StatesGroup):
     waiting_setting_value = State()
 
 # ==============================================================================
-# ОБРАБОТЧИКИ ПОЛЬЗОВАТЕЛЬСКОЙ ЧАСТИ
+# ОБРАБОТЧИКИ ПОЛЬЗОВАТЕЛЕСКОЙ ЧАСТИ
 # ==============================================================================
 
 @router.message(CommandStart(), F.chat.type == ChatType.PRIVATE)
@@ -665,10 +643,7 @@ async def process_menu_earn(callback: CallbackQuery):
     user = await get_user(user_id)
     lang = user["language"]
 
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM groups WHERE status = 1") as cursor:
-            groups = await cursor.fetchall()
+    groups = await db_query("SELECT * FROM groups WHERE status = 1", fetchall=True)
 
     kb = []
     if groups:
@@ -721,12 +696,8 @@ async def process_user_bonus(callback: CallbackQuery):
     b_max = float(await get_setting("bonus_max", "2.00"))
     reward = round(random.uniform(b_min, b_max), 2)
 
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        await db.execute("UPDATE users SET balance = balance + ?, last_bonus = ? WHERE telegram_id = ?",
-                         (reward, now.isoformat(), user_id))
-        await db.execute("INSERT INTO bonus_history (user_id, amount, created_at) VALUES (?, ?, ?)",
-                         (user_id, reward, now.isoformat()))
-        await db.commit()
+    await db_query("UPDATE users SET balance = balance + ?, last_bonus = ? WHERE telegram_id = ?", (reward, now.isoformat(), user_id))
+    await db_query("INSERT INTO bonus_history (user_id, amount, created_at) VALUES (?, ?, ?)", (user_id, reward, now.isoformat()))
 
     text = get_str("bonus_received", lang, amount=reward, currency=currency)
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_str("btn_back", lang), callback_data="menu_profile")]])
@@ -771,30 +742,24 @@ async def process_create_withdraw(callback: CallbackQuery):
     cooldown_sec = int(await get_setting("withdraw_cooldown", "300"))
     now = datetime.now()
 
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        async with db.execute(
-            "SELECT created_at FROM withdraws WHERE user_id = ? ORDER BY id DESC LIMIT 1", (user_id,)
-        ) as cursor:
-            row = await cursor.fetchone()
-            if row:
-                last_req_time = datetime.fromisoformat(row[0])
-                if now - last_req_time < timedelta(seconds=cooldown_sec):
-                    await callback.answer()
-                    remaining = timedelta(seconds=cooldown_sec) - (now - last_req_time)
-                    mins, secs = divmod(int(remaining.total_seconds()), 60)
-                    text = get_str("withdraw_cooldown", lang, minutes=mins, seconds=secs)
-                    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_str("btn_back", lang), callback_data="user_withdraw")]])
-                    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.MARKDOWN)
-                    return
+    last_req = await db_query("SELECT created_at FROM withdraws WHERE user_id = ? ORDER BY id DESC LIMIT 1", (user_id,), fetchone=True)
+    if last_req:
+        last_req_time = datetime.fromisoformat(last_req["created_at"])
+        if now - last_req_time < timedelta(seconds=cooldown_sec):
+            await callback.answer()
+            remaining = timedelta(seconds=cooldown_sec) - (now - last_req_time)
+            mins, secs = divmod(int(remaining.total_seconds()), 60)
+            text = get_str("withdraw_cooldown", lang, minutes=mins, seconds=secs)
+            kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_str("btn_back", lang), callback_data="user_withdraw")]])
+            await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.MARKDOWN)
+            return
 
-        await db.execute("UPDATE users SET balance = balance - ? WHERE telegram_id = ?", (amount, user_id))
-        now_str = now.isoformat()
-        cursor = await db.execute("""
-            INSERT INTO withdraws (user_id, amount, status, created_at, updated_at)
-            VALUES (?, ?, 'new', ?, ?)
-        """, (user_id, amount, now_str, now_str))
-        withdraw_id = cursor.lastrowid
-        await db.commit()
+    await db_query("UPDATE users SET balance = balance - ? WHERE telegram_id = ?", (amount, user_id))
+    now_str = now.isoformat()
+    withdraw_id = await db_query("""
+        INSERT INTO withdraws (user_id, amount, status, created_at, updated_at)
+        VALUES (?, ?, 'new', ?, ?)
+    """, (user_id, amount, now_str, now_str))
 
     await callback.answer()
     text = get_str("withdraw_created", lang, amount=amount, currency=currency)
@@ -817,18 +782,16 @@ async def process_create_withdraw(callback: CallbackQuery):
         ]
     ])
 
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        async with db.execute("SELECT telegram_id FROM admins") as cursor:
-            admins = await cursor.fetchall()
-            for adm in admins:
-                if await has_perm(adm[0], "manage_withdraws"):
-                    try:
-                        await bot.send_message(adm[0], admin_text, reply_markup=admin_kb, parse_mode=ParseMode.MARKDOWN)
-                    except Exception:
-                        pass
+    admins = await db_query("SELECT telegram_id FROM admins", fetchall=True)
+    for adm in admins:
+        if await has_perm(adm["telegram_id"], "manage_withdraws"):
+            try:
+                await bot.send_message(adm["telegram_id"], admin_text, reply_markup=admin_kb, parse_mode=ParseMode.MARKDOWN)
+            except Exception:
+                pass
 
 # ==============================================================================
-# НАГРАДЫ ЗА СООБЩЕНИЯ В ГРУППАХ (ИСПРАВЛЕНО!)
+# НАГРАДЫ ЗА СООБЩЕНИЯ В ГРУППАХ
 # ==============================================================================
 
 @router.message(F.chat.type.in_([ChatType.GROUP, ChatType.SUPERGROUP]))
@@ -840,18 +803,13 @@ async def handle_group_message(message: Message):
     user_id = message.from_user.id
     now = datetime.now()
 
-    # Проверка подключения группы в базе
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        async with db.execute("SELECT status FROM groups WHERE chat_id = ?", (chat_id,)) as cursor:
-            group = await cursor.fetchone()
-            if not group or group[0] == 0:
-                return
+    group = await db_query("SELECT status FROM groups WHERE chat_id = ?", (chat_id,), fetchone=True)
+    if not group or group["status"] == 0:
+        return
 
-    # Проверка активен ли модуль наград
     if await get_setting("mod_rewards", "1") == "0":
         return
 
-    # Проверка минимальной длины сообщения
     min_len = int(await get_setting("min_msg_len", "5"))
     if not message.text or len(message.text) < min_len:
         return
@@ -863,13 +821,11 @@ async def handle_group_message(message: Message):
     if await check_user_ban_status(user):
         return
 
-    # Антифлуд задержка
     cooldown_sec = int(await get_setting("antiflood_cooldown", "30"))
     if user_id in user_last_reward_time:
         if now - user_last_reward_time[user_id] < timedelta(seconds=cooldown_sec):
             return
 
-    # Проверка подписки на канал
     is_subbed = await check_channel_subscription(user_id)
     if not is_subbed:
         if user_id not in user_last_msg_time or (now - user_last_msg_time[user_id] > timedelta(minutes=5)):
@@ -879,7 +835,6 @@ async def handle_group_message(message: Message):
             await message.reply(text, parse_mode=ParseMode.MARKDOWN)
         return
 
-    # Проверка вероятности (шанса)
     chance = float(await get_setting("msg_reward_chance", "15"))
     if chance <= 0.0:
         return
@@ -888,7 +843,6 @@ async def handle_group_message(message: Message):
         if roll > chance:
             return
 
-    # Выбор диапазона наград по их точному процентному весу
     ranges = [
         (0.01, 0.10, float(await get_setting("rng_0.01_0.10", "70"))),
         (0.10, 0.50, float(await get_setting("rng_0.10_0.50", "20"))),
@@ -917,10 +871,7 @@ async def handle_group_message(message: Message):
     await update_user_balance(user_id, reward)
     user_last_reward_time[user_id] = now
 
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        await db.execute("INSERT INTO messages_history (user_id, group_id, created_at) VALUES (?, ?, ?)",
-                         (user_id, chat_id, now.isoformat()))
-        await db.commit()
+    await db_query("INSERT INTO messages_history (user_id, group_id, created_at) VALUES (?, ?, ?)", (user_id, chat_id, now.isoformat()))
 
     currency = get_str("currency", user["language"])
     name_link = f"[{message.from_user.first_name}](tg://user?id={user_id})"
@@ -948,18 +899,15 @@ async def process_bot_added_to_group(event: ChatMemberUpdated):
             return
 
         now_str = datetime.now().isoformat()
-        async with aiosqlite.connect(DATABASE_PATH) as db:
-            async with db.execute("SELECT id FROM groups WHERE chat_id = ?", (chat_id,)) as cursor:
-                row = await cursor.fetchone()
-                if row:
-                    await bot.send_message(chat_id, get_str("group_already_connected", "ru"))
-                    return
+        row = await db_query("SELECT id FROM groups WHERE chat_id = ?", (chat_id,), fetchone=True)
+        if row:
+            await bot.send_message(chat_id, get_str("group_already_connected", "ru"))
+            return
 
-            await db.execute("""
-                INSERT INTO groups (chat_id, title, added_by, created_at, status)
-                VALUES (?, ?, ?, ?, 1)
-            """, (chat_id, title, added_by_user.id, now_str))
-            await db.commit()
+        await db_query("""
+            INSERT INTO groups (chat_id, title, added_by, created_at, status)
+            VALUES (?, ?, ?, ?, 1)
+        """, (chat_id, title, added_by_user.id, now_str))
 
         await bot.send_message(chat_id, get_str("group_connected", "ru"), parse_mode=ParseMode.MARKDOWN)
 
@@ -1044,18 +992,18 @@ async def process_adm_stats(callback: CallbackQuery):
     user = await get_user(user_id)
     lang = user["language"]
 
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        async with db.execute("SELECT COUNT(*) FROM users") as c: total_users = (await c.fetchone())[0]
-        async with db.execute("SELECT COUNT(*) FROM messages_history") as c: total_msgs = (await c.fetchone())[0]
-        async with db.execute("SELECT SUM(balance) FROM users") as c: total_stars = (await c.fetchone())[0] or 0.0
-        async with db.execute("SELECT COUNT(*) FROM bonus_history") as c: total_bonuses = (await c.fetchone())[0]
-        async with db.execute("SELECT COUNT(*) FROM withdraws") as c: total_wd = (await c.fetchone())[0]
-        async with db.execute("SELECT COUNT(*) FROM withdraws WHERE status = 'approved'") as c: ok_wd = (await c.fetchone())[0]
-        async with db.execute("SELECT COUNT(*) FROM withdraws WHERE status = 'rejected'") as c: err_wd = (await c.fetchone())[0]
-        async with db.execute("SELECT COUNT(*) FROM withdraws WHERE status = 'hold'") as c: hold_wd = (await c.fetchone())[0]
-        async with db.execute("SELECT COUNT(*) FROM users WHERE is_banned = 1") as c: banned_users = (await c.fetchone())[0]
-        async with db.execute("SELECT COUNT(*) FROM admins") as c: total_admins = (await c.fetchone())[0]
-        async with db.execute("SELECT COUNT(*) FROM groups WHERE status = 1") as c: total_groups = (await c.fetchone())[0]
+    total_users = (await db_query("SELECT COUNT(*) as c FROM users", fetchone=True))["c"]
+    total_msgs = (await db_query("SELECT COUNT(*) as c FROM messages_history", fetchone=True))["c"]
+    total_stars_res = await db_query("SELECT SUM(balance) as s FROM users", fetchone=True)
+    total_stars = total_stars_res["s"] if total_stars_res and total_stars_res["s"] else 0.0
+    total_bonuses = (await db_query("SELECT COUNT(*) as c FROM bonus_history", fetchone=True))["c"]
+    total_wd = (await db_query("SELECT COUNT(*) as c FROM withdraws", fetchone=True))["c"]
+    ok_wd = (await db_query("SELECT COUNT(*) as c FROM withdraws WHERE status = 'approved'", fetchone=True))["c"]
+    err_wd = (await db_query("SELECT COUNT(*) as c FROM withdraws WHERE status = 'rejected'", fetchone=True))["c"]
+    hold_wd = (await db_query("SELECT COUNT(*) as c FROM withdraws WHERE status = 'hold'", fetchone=True))["c"]
+    banned_users = (await db_query("SELECT COUNT(*) as c FROM users WHERE is_banned = 1", fetchone=True))["c"]
+    total_admins = (await db_query("SELECT COUNT(*) as c FROM admins", fetchone=True))["c"]
+    total_groups = (await db_query("SELECT COUNT(*) as c FROM groups WHERE status = 1", fetchone=True))["c"]
 
     text = (
         f"📊 **Системная Статистика**\n\n"
@@ -1090,13 +1038,8 @@ async def process_adm_users_page(callback: CallbackQuery):
     user = await get_user(user_id)
     lang = user["language"]
 
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT COUNT(*) FROM users") as c:
-            total_count = (await c.fetchone())[0]
-
-        async with db.execute("SELECT * FROM users ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset)) as cursor:
-            users_list = await cursor.fetchall()
+    total_count = (await db_query("SELECT COUNT(*) as c FROM users", fetchone=True))["c"]
+    users_list = await db_query("SELECT * FROM users ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset), fetchall=True)
 
     text = f"👥 **Список пользователей (Страница {page})**\n\n"
     kb = []
@@ -1166,10 +1109,7 @@ async def process_adm_withdraws_active(callback: CallbackQuery):
     admin = await get_user(admin_id)
     lang = admin["language"]
 
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM withdraws WHERE status IN ('new', 'hold') ORDER BY id DESC") as cursor:
-            items = await cursor.fetchall()
+    items = await db_query("SELECT * FROM withdraws WHERE status IN ('new', 'hold') ORDER BY id DESC", fetchall=True)
 
     if not items:
         text = "📤 **Активных заявок на вывод нет.**"
@@ -1193,10 +1133,7 @@ async def process_adm_withdraws_active(callback: CallbackQuery):
 async def process_adm_wd_manage(callback: CallbackQuery):
     await callback.answer()
     wd_id = int(callback.data.split(":")[1])
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM withdraws WHERE id = ?", (wd_id,)) as cursor:
-            wd = await cursor.fetchone()
+    wd = await db_query("SELECT * FROM withdraws WHERE id = ?", (wd_id,), fetchone=True)
 
     u = await get_user(wd["user_id"])
     text = (
@@ -1228,14 +1165,8 @@ async def process_adm_wd_approve(callback: CallbackQuery):
     wd_id = int(callback.data.split(":")[1])
     now_str = datetime.now().isoformat()
 
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM withdraws WHERE id = ?", (wd_id,)) as cursor:
-            wd = await cursor.fetchone()
-        await db.execute("""
-            UPDATE withdraws SET status = 'approved', updated_at = ?, admin_id = ? WHERE id = ?
-        """, (now_str, admin_id, wd_id))
-        await db.commit()
+    wd = await db_query("SELECT * FROM withdraws WHERE id = ?", (wd_id,), fetchone=True)
+    await db_query("UPDATE withdraws SET status = 'approved', updated_at = ?, admin_id = ? WHERE id = ?", (now_str, admin_id, wd_id))
 
     await log_admin_action(admin_id, wd["user_id"], "approve_withdraw", wd["status"], "approved")
 
@@ -1260,14 +1191,8 @@ async def process_adm_wd_hold(callback: CallbackQuery):
     wd_id = int(callback.data.split(":")[1])
     now_str = datetime.now().isoformat()
 
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM withdraws WHERE id = ?", (wd_id,)) as cursor:
-            wd = await cursor.fetchone()
-        await db.execute("""
-            UPDATE withdraws SET status = 'hold', updated_at = ?, admin_id = ? WHERE id = ?
-        """, (now_str, admin_id, wd_id))
-        await db.commit()
+    wd = await db_query("SELECT * FROM withdraws WHERE id = ?", (wd_id,), fetchone=True)
+    await db_query("UPDATE withdraws SET status = 'hold', updated_at = ?, admin_id = ? WHERE id = ?", (now_str, admin_id, wd_id))
 
     await log_admin_action(admin_id, wd["user_id"], "hold_withdraw", wd["status"], "hold")
 
@@ -1304,16 +1229,12 @@ async def process_reject_reason_input(message: Message, state: FSMContext):
     reason = message.text
     now_str = datetime.now().isoformat()
 
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM withdraws WHERE id = ?", (wd_id,)) as cursor:
-            wd = await cursor.fetchone()
+    wd = await db_query("SELECT * FROM withdraws WHERE id = ?", (wd_id,), fetchone=True)
 
-        await db.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (wd["amount"], wd["user_id"]))
-        await db.execute("""
-            UPDATE withdraws SET status = 'rejected', reject_reason = ?, updated_at = ?, admin_id = ? WHERE id = ?
-        """, (reason, now_str, admin_id, wd_id))
-        await db.commit()
+    await db_query("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (wd["amount"], wd["user_id"]))
+    await db_query("""
+        UPDATE withdraws SET status = 'rejected', reject_reason = ?, updated_at = ?, admin_id = ? WHERE id = ?
+    """, (reason, now_str, admin_id, wd_id))
 
     await log_admin_action(admin_id, wd["user_id"], "reject_withdraw", wd["status"], f"rejected ({reason})")
 
@@ -1340,10 +1261,7 @@ async def process_adm_withdraws_history(callback: CallbackQuery):
     admin = await get_user(admin_id)
     lang = admin["language"]
 
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM withdraws ORDER BY id DESC LIMIT 20") as cursor:
-            items = await cursor.fetchall()
+    items = await db_query("SELECT * FROM withdraws ORDER BY id DESC LIMIT 20", fetchall=True)
 
     text = "📚 **История выводов (Последние 20):**\n\n"
     for item in items:
@@ -1383,16 +1301,14 @@ async def process_adm_broadcast_confirm(callback: CallbackQuery, state: FSMConte
 
     await callback.message.edit_text("⏳ Рассылка запущена...")
 
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        async with db.execute("SELECT telegram_id FROM users WHERE is_banned = 0") as cursor:
-            users = await cursor.fetchall()
+    users = await db_query("SELECT telegram_id FROM users WHERE is_banned = 0", fetchall=True)
 
     success = 0
     errors = 0
 
     for u in users:
         try:
-            await bot.copy_message(chat_id=u[0], from_chat_id=from_chat_id, message_id=msg_id)
+            await bot.copy_message(chat_id=u["telegram_id"], from_chat_id=from_chat_id, message_id=msg_id)
             success += 1
             await asyncio.sleep(0.05)
         except Exception:
@@ -1450,10 +1366,7 @@ async def process_ban_reason_input(message: Message, state: FSMContext):
     if minutes > 0:
         ban_until_str = (datetime.now() + timedelta(minutes=minutes)).isoformat()
 
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        await db.execute("UPDATE users SET is_banned = 1, ban_until = ? WHERE telegram_id = ?", (ban_until_str, target_id))
-        await db.commit()
-
+    await db_query("UPDATE users SET is_banned = 1, ban_until = ? WHERE telegram_id = ?", (ban_until_str, target_id))
     await log_admin_action(admin_id, target_id, "ban", "0", f"banned until {ban_until_str} ({reason})")
 
     try:
@@ -1472,9 +1385,7 @@ async def process_adm_user_unban_act(callback: CallbackQuery):
         return
 
     target_id = int(callback.data.split(":")[1])
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        await db.execute("UPDATE users SET is_banned = 0, ban_until = NULL WHERE telegram_id = ?", (target_id,))
-        await db.commit()
+    await db_query("UPDATE users SET is_banned = 0, ban_until = NULL WHERE telegram_id = ?", (target_id,))
 
     await log_admin_action(admin_id, target_id, "unban", "1", "0")
 
@@ -1611,10 +1522,7 @@ async def process_adm_admins_menu(callback: CallbackQuery):
         return
 
     await callback.answer()
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM admins") as cursor:
-            admins_list = await cursor.fetchall()
+    admins_list = await db_query("SELECT * FROM admins", fetchall=True)
 
     text = "👮 **Список администраторов:**\n\n"
     kb = []
@@ -1647,13 +1555,11 @@ async def process_add_admin_id_input(message: Message, state: FSMContext):
         return
 
     now_str = datetime.now().isoformat()
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        await db.execute("INSERT OR IGNORE INTO admins (telegram_id, created_at, added_by) VALUES (?, ?, ?)",
-                         (new_admin_id, now_str, message.from_user.id))
-        for p in ALL_PERMISSIONS:
-            await db.execute("INSERT OR IGNORE INTO permissions (admin_id, permission_name, enabled) VALUES (?, ?, 1)",
-                             (new_admin_id, p))
-        await db.commit()
+    await db_query("INSERT OR IGNORE INTO admins (telegram_id, created_at, added_by) VALUES (?, ?, ?)",
+                   (new_admin_id, now_str, message.from_user.id))
+    for p in ALL_PERMISSIONS:
+        await db_query("INSERT OR IGNORE INTO permissions (admin_id, permission_name, enabled) VALUES (?, ?, 1)",
+                       (new_admin_id, p))
 
     await state.clear()
     await message.answer(f"✅ Пользователь `{new_admin_id}` назначен администратором со всеми правами.", reply_markup=await build_admin_main_kb(message.from_user.id, "ru"))
@@ -1668,11 +1574,7 @@ async def process_adm_perm_edit(callback: CallbackQuery):
     await callback.answer()
     target_adm_id = int(callback.data.split(":")[1])
 
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT permission_name, enabled FROM permissions WHERE admin_id = ?", (target_adm_id,)) as cursor:
-            perms = await cursor.fetchall()
-
+    perms = await db_query("SELECT permission_name, enabled FROM permissions WHERE admin_id = ?", (target_adm_id,), fetchall=True)
     perm_dict = {p["permission_name"]: p["enabled"] for p in perms}
 
     kb = []
@@ -1696,15 +1598,10 @@ async def process_adm_perm_toggle(callback: CallbackQuery):
     target_adm_id = int(parts[1])
     perm_name = parts[2]
 
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        async with db.execute("SELECT enabled FROM permissions WHERE admin_id = ? AND permission_name = ?",
-                               (target_adm_id, perm_name)) as cursor:
-            row = await cursor.fetchone()
-            curr = row[0] if row else 0
-        new_val = 0 if curr == 1 else 1
-        await db.execute("INSERT OR REPLACE INTO permissions (admin_id, permission_name, enabled) VALUES (?, ?, ?)",
-                         (target_adm_id, perm_name, new_val))
-        await db.commit()
+    row = await db_query("SELECT enabled FROM permissions WHERE admin_id = ? AND permission_name = ?", (target_adm_id, perm_name), fetchone=True)
+    curr = row["enabled"] if row else 0
+    new_val = 0 if curr == 1 else 1
+    await db_query("INSERT OR REPLACE INTO permissions (admin_id, permission_name, enabled) VALUES (?, ?, ?)", (target_adm_id, perm_name, new_val))
 
     await process_adm_perm_edit(callback)
 
@@ -1720,10 +1617,8 @@ async def process_adm_remove_admin(callback: CallbackQuery):
         await callback.answer("❌ Нельзя удалить владельца бота!", show_alert=True)
         return
 
-    async with aiosqlite.connect(DATABASE_PATH) as db:
-        await db.execute("DELETE FROM admins WHERE telegram_id = ?", (target_adm_id,))
-        await db.execute("DELETE FROM permissions WHERE admin_id = ?", (target_adm_id,))
-        await db.commit()
+    await db_query("DELETE FROM admins WHERE telegram_id = ?", (target_adm_id,))
+    await db_query("DELETE FROM permissions WHERE admin_id = ?", (target_adm_id,))
 
     await callback.answer("✅ Администратор удален!")
     await process_adm_admins_menu(callback)
