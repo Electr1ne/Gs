@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.enums import ChatMemberStatus, ChatType, ParseMode
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command, CommandStart
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -20,6 +21,7 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     Message,
 )
+
 
 TOKEN = os.getenv("TOKEN")
 OWNER_ID = os.getenv("OWNER_ID")
@@ -61,7 +63,7 @@ def _db_execute(query: str, params: tuple = (), fetchone: bool = False, fetchall
             rows = cursor.fetchall()
             result = [dict(r) for r in rows]
         else:
-            result = cursor.lastrowid
+            result = cursor.rowcount if cursor.rowcount != -1 else cursor.lastrowid
         if commit:
             conn.commit()
         return result
@@ -138,6 +140,7 @@ STRINGS = {
         "admin_btn_bonus_cfg": "🎁 Ежедневный бонус",
         "admin_btn_modules": "⚙️ Модули",
         "admin_btn_admins": "👮 Администраторы",
+        "admin_btn_groups": "🏠 Группы",
         "admin_btn_settings": "⚙️ Настройки",
         "admin_btn_stats": "📊 Статистика",
         "no_permission": "❌ У вас нет прав для выполнения данного действия.",
@@ -206,6 +209,7 @@ STRINGS = {
         "admin_btn_bonus_cfg": "🎁 Daily Bonus Config",
         "admin_btn_modules": "⚙️ Modules",
         "admin_btn_admins": "👮 Administrators",
+        "admin_btn_groups": "🏠 Groups",
         "admin_btn_settings": "⚙️ Settings",
         "admin_btn_stats": "📊 Statistics",
         "no_permission": "❌ You do not have permission to perform this action.",
@@ -216,18 +220,33 @@ ALL_PERMISSIONS = [
     "view_users", "edit_balance", "ban_users", "unban_users",
     "broadcast", "manage_chances", "manage_bonus", "manage_withdraws",
     "view_history", "view_active_withdraws", "manage_modules",
-    "manage_settings", "view_stats", "manage_admins", "full_access"
+    "manage_settings", "view_stats", "manage_admins", "manage_groups", "full_access"
 ]
 
 def get_str(key: str, lang: str = "ru", **kwargs) -> str:
     lang_code = lang if lang in STRINGS else "ru"
     template = STRINGS[lang_code].get(key, STRINGS["ru"].get(key, key))
-    escaped_kwargs = {k: html.escape(str(v)) if isinstance(v, str) else v for k, v in kwargs.items()}
+    escaped_kwargs = {
+        k: (v if k == "name" else (html.escape(str(v)) if isinstance(v, str) else v))
+        for k, v in kwargs.items()
+    }
     return template.format(**escaped_kwargs)
 
 # ==============================================================================
 # БАЗА ДАННЫХ И МИГРАЦИИ
 # ==============================================================================
+
+async def add_column_if_not_exists(table: str, column: str, col_type: str):
+    """Безопасно добавляет новую колонку, если её ещё нет в таблице."""
+    cursor = await db_query(f"PRAGMA table_info({table})")
+
+    # Проверка формата возвращаемых данных из db_query
+    rows = await cursor.fetchall() if hasattr(cursor, 'fetchall') else cursor
+    columns = [row[1] for row in rows]
+
+    if column not in columns:
+        await db_query(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+
 
 async def init_db():
     queries = [
@@ -318,9 +337,16 @@ async def init_db():
         )
         """
     ]
+
+    # 1. Создание основных таблиц (если база пустая)
     for q in queries:
         await db_query(q)
 
+    # 2. МИГРАЦИИ (Добавление новых колонок в существующие таблицы)
+    # Если в будущем захочешь добавить новое поле в старую базу — раскомментируй и впиши нужную колонку:
+    # await add_column_if_not_exists("users", "referral_id", "INTEGER DEFAULT 0")
+
+    # 3. Дефолтные настройки
     default_settings = {
         "mod_rewards": "1",
         "mod_withdraws": "1",
@@ -346,9 +372,11 @@ async def init_db():
     for k, v in default_settings.items():
         await db_query("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v))
 
+    # 4. Инициализация владельца и прав
     now_str = datetime.now().isoformat()
     await db_query("INSERT OR IGNORE INTO admins (telegram_id, created_at, added_by) VALUES (?, ?, ?)",
                    (OWNER_ID, now_str, OWNER_ID))
+
     for perm in ALL_PERMISSIONS:
         await db_query("INSERT OR IGNORE INTO permissions (admin_id, permission_name, enabled) VALUES (?, ?, 1)",
                        (OWNER_ID, perm))
@@ -365,7 +393,7 @@ async def set_setting(key: str, value: str):
 async def get_user(telegram_id: int) -> Optional[Dict[str, Any]]:
     return await db_query("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,), fetchone=True)
 
-async def create_user(telegram_id: int, username: str, first_name: str) -> Dict[str, Any]:
+async def create_user(telegram_id: int, username: Optional[str], first_name: Optional[str]) -> Dict[str, Any]:
     now = datetime.now().isoformat()
     await db_query("""
         INSERT INTO users (telegram_id, username, first_name, register_date, last_activity)
@@ -431,10 +459,13 @@ async def check_user_ban_status(user: Dict[str, Any]) -> bool:
         return False
     ban_until_str = user.get("ban_until")
     if ban_until_str:
-        ban_until = datetime.fromisoformat(ban_until_str)
-        if datetime.now() > ban_until:
-            await db_query("UPDATE users SET is_banned = 0, ban_until = NULL WHERE telegram_id = ?", (user["telegram_id"],))
-            return False
+        try:
+            ban_until = datetime.fromisoformat(ban_until_str)
+            if datetime.now() > ban_until:
+                await db_query("UPDATE users SET is_banned = 0, ban_until = NULL WHERE telegram_id = ?", (user["telegram_id"],))
+                return False
+        except ValueError:
+            pass
     return True
 
 # ==============================================================================
@@ -589,7 +620,7 @@ async def process_menu_main(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     user_id = callback.from_user.id
     user = await get_user(user_id)
-    lang = user["language"]
+    lang = user["language"] if user else "ru"
 
     await callback.message.edit_text(
         get_str("main_menu_text", lang),
@@ -602,6 +633,8 @@ async def process_menu_profile(callback: CallbackQuery):
     await callback.answer()
     user_id = callback.from_user.id
     user = await get_user(user_id)
+    if not user:
+        return
     lang = user["language"]
 
     reg_date = user["register_date"].split("T")[0] if "T" in user["register_date"] else user["register_date"]
@@ -611,7 +644,7 @@ async def process_menu_profile(callback: CallbackQuery):
     text = get_str(
         "profile_text",
         lang,
-        name=user["first_name"],
+        name=html.escape(user["first_name"] or ""),
         user_id=user["telegram_id"],
         balance=user["balance"],
         currency=currency,
@@ -639,7 +672,7 @@ async def process_menu_earn(callback: CallbackQuery):
     await callback.answer()
     user_id = callback.from_user.id
     user = await get_user(user_id)
-    lang = user["language"]
+    lang = user["language"] if user else "ru"
 
     groups = await db_query("SELECT * FROM groups WHERE status = 1", fetchall=True)
 
@@ -665,6 +698,8 @@ async def process_menu_earn(callback: CallbackQuery):
 async def process_user_bonus(callback: CallbackQuery):
     user_id = callback.from_user.id
     user = await get_user(user_id)
+    if not user:
+        return
     lang = user["language"]
     currency = get_str("currency", lang)
 
@@ -677,17 +712,20 @@ async def process_user_bonus(callback: CallbackQuery):
     now = datetime.now()
 
     if last_bonus_str:
-        last_bonus_time = datetime.fromisoformat(last_bonus_str)
-        next_bonus_time = last_bonus_time + timedelta(hours=24)
-        if now < next_bonus_time:
-            await callback.answer()
-            diff = next_bonus_time - now
-            hours, remainder = divmod(int(diff.total_seconds()), 3600)
-            minutes, _ = divmod(remainder, 60)
-            text = get_str("bonus_cooldown", lang, hours=hours, minutes=minutes)
-            kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_str("btn_back", lang), callback_data="menu_profile")]])
-            await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
-            return
+        try:
+            last_bonus_time = datetime.fromisoformat(last_bonus_str)
+            next_bonus_time = last_bonus_time + timedelta(hours=24)
+            if now < next_bonus_time:
+                await callback.answer()
+                diff = next_bonus_time - now
+                hours, remainder = divmod(int(diff.total_seconds()), 3600)
+                minutes, _ = divmod(remainder, 60)
+                text = get_str("bonus_cooldown", lang, hours=hours, minutes=minutes)
+                kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_str("btn_back", lang), callback_data="menu_profile")]])
+                await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+                return
+        except ValueError:
+            pass
 
     await callback.answer()
     b_min = float(await get_setting("bonus_min", "0.01"))
@@ -710,7 +748,7 @@ async def process_user_withdraw_menu(callback: CallbackQuery):
     await callback.answer()
     user_id = callback.from_user.id
     user = await get_user(user_id)
-    lang = user["language"]
+    lang = user["language"] if user else "ru"
 
     await callback.message.edit_text(
         get_str("withdraw_menu", lang),
@@ -720,9 +758,18 @@ async def process_user_withdraw_menu(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("withdraw_req:"))
 async def process_create_withdraw(callback: CallbackQuery):
-    amount = float(callback.data.split(":")[1])
+    try:
+        amount = float(callback.data.split(":")[1])
+    except (ValueError, IndexError):
+        await callback.answer("⚠️ Некорректная сумма вывода", show_alert=True)
+        return
+
     user_id = callback.from_user.id
     user = await get_user(user_id)
+    if not user:
+        await callback.answer("⚠️ Пользователь не найден", show_alert=True)
+        return
+
     lang = user["language"]
     currency = get_str("currency", lang)
 
@@ -730,29 +777,39 @@ async def process_create_withdraw(callback: CallbackQuery):
         await callback.answer(get_str("withdraw_disabled", lang), show_alert=True)
         return
 
-    if user["balance"] < amount:
-        await callback.answer()
-        text = get_str("withdraw_insufficient", lang, balance=user["balance"], currency=currency, required=amount)
-        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_str("btn_back", lang), callback_data="user_withdraw")]])
-        await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
-        return
-
     cooldown_sec = int(await get_setting("withdraw_cooldown", "300"))
     now = datetime.now()
 
     last_req = await db_query("SELECT created_at FROM withdraws WHERE user_id = ? ORDER BY id DESC LIMIT 1", (user_id,), fetchone=True)
-    if last_req:
-        last_req_time = datetime.fromisoformat(last_req["created_at"])
-        if now - last_req_time < timedelta(seconds=cooldown_sec):
-            await callback.answer()
-            remaining = timedelta(seconds=cooldown_sec) - (now - last_req_time)
-            mins, secs = divmod(int(remaining.total_seconds()), 60)
-            text = get_str("withdraw_cooldown", lang, minutes=mins, seconds=secs)
-            kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_str("btn_back", lang), callback_data="user_withdraw")]])
-            await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
-            return
+    if last_req and last_req.get("created_at"):
+        try:
+            last_req_time = datetime.fromisoformat(last_req["created_at"])
+            if now - last_req_time < timedelta(seconds=cooldown_sec):
+                await callback.answer()
+                remaining = timedelta(seconds=cooldown_sec) - (now - last_req_time)
+                mins, secs = divmod(int(remaining.total_seconds()), 60)
+                text = get_str("withdraw_cooldown", lang, minutes=mins, seconds=secs)
+                kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_str("btn_back", lang), callback_data="user_withdraw")]])
+                await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+                return
+        except ValueError:
+            pass
 
-    await db_query("UPDATE users SET balance = balance - ? WHERE telegram_id = ?", (amount, user_id))
+    # Атомарное списание средств
+    rows_affected = await db_query(
+        "UPDATE users SET balance = balance - ? WHERE telegram_id = ? AND balance >= ?",
+        (amount, user_id, amount)
+    )
+
+    if not rows_affected or rows_affected == 0:
+        user_updated = await get_user(user_id)
+        current_bal = user_updated["balance"] if user_updated else 0.0
+        await callback.answer()
+        text = get_str("withdraw_insufficient", lang, balance=current_bal, currency=currency, required=amount)
+        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_str("btn_back", lang), callback_data="user_withdraw")]])
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+        return
+
     now_str = now.isoformat()
     withdraw_id = await db_query("""
         INSERT INTO withdraws (user_id, amount, status, created_at, updated_at)
@@ -762,10 +819,14 @@ async def process_create_withdraw(callback: CallbackQuery):
     await callback.answer()
     text = get_str("withdraw_created", lang, amount=amount, currency=currency)
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_str("btn_back", lang), callback_data="menu_profile")]])
-    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
 
-    clean_first_name = html.escape(user['first_name'] or '')
-    clean_username = html.escape(user['username'] or 'нет')
+    try:
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+    except Exception:
+        pass
+
+    clean_first_name = html.escape(user.get('first_name') or '')
+    clean_username = html.escape(user.get('username') or 'нет')
 
     admin_text = (
         f"📤 <b>Новая заявка на вывод #{withdraw_id}</b>\n\n"
@@ -783,7 +844,7 @@ async def process_create_withdraw(callback: CallbackQuery):
         ]
     ])
 
-    admins = await db_query("SELECT telegram_id FROM admins", fetchall=True)
+    admins = await db_query("SELECT telegram_id FROM admins", fetchall=True) or []
     for adm in admins:
         if await has_perm(adm["telegram_id"], "manage_withdraws"):
             try:
@@ -795,7 +856,9 @@ async def process_create_withdraw(callback: CallbackQuery):
 # НАГРАДЫ ЗА СООБЩЕНИЯ В ГРУППАХ
 # ==============================================================================
 
-@router.message(F.chat.type.in_([ChatType.GROUP, ChatType.SUPERGROUP]), ~F.sender_chat)
+@router.message(
+    F.chat.type.in_([ChatType.GROUP, ChatType.SUPERGROUP]), ~F.sender_chat
+)
 async def handle_group_message(message: Message):
     if not message.from_user or message.from_user.is_bot:
         return
@@ -811,38 +874,38 @@ async def handle_group_message(message: Message):
     if await get_setting("mod_rewards", "1") == "0":
         return
 
-    min_len = int(await get_setting("min_msg_len", "5"))
-    if not message.text or len(message.text) < min_len:
-        return
-
     user = await get_user(user_id)
     if not user:
         user = await create_user(user_id, message.from_user.username, message.from_user.first_name)
 
+    await update_user_activity(user_id)
+
     if await check_user_ban_status(user):
         return
 
-    cooldown_sec = int(await get_setting("antiflood_cooldown", "30"))
-    if user_id in user_last_reward_time:
-        if now - user_last_reward_time[user_id] < timedelta(seconds=cooldown_sec):
-            return
-
     is_subbed = await check_channel_subscription(user_id)
     if not is_subbed:
-        if user_id not in user_last_msg_time or (now - user_last_msg_time[user_id] > timedelta(minutes=5)):
+        last_warn = user_last_msg_time.get(user_id)
+        if not last_warn or (now - last_warn > timedelta(minutes=5)):
             user_last_msg_time[user_id] = now
             name_link = f'<a href="tg://user?id={user_id}">{html.escape(message.from_user.first_name)}</a>'
             text = get_str("group_not_subbed", user["language"], name=name_link, channel=CHANNEL_USERNAME)
             await message.reply(text, parse_mode=ParseMode.HTML)
         return
 
-    chance = float(await get_setting("msg_reward_chance", "15"))
-    if chance <= 0.0:
+    msg_text = message.text or message.caption or ""
+    min_len = int(await get_setting("min_msg_len", "5"))
+    if len(msg_text) < min_len:
         return
-    if chance < 100.0:
-        roll = random.uniform(0.0, 100.0)
-        if roll > chance:
-            return
+
+    cooldown_sec = int(await get_setting("antiflood_cooldown", "30"))
+    last_reward = user_last_reward_time.get(user_id)
+    if last_reward and (now - last_reward < timedelta(seconds=cooldown_sec)):
+        return
+
+    chance = float(await get_setting("msg_reward_chance", "15"))
+    if chance <= 0.0 or (chance < 100.0 and random.uniform(0.0, 100.0) > chance):
+        return
 
     ranges = [
         (0.01, 0.10, float(await get_setting("rng_0.01_0.10", "70"))),
@@ -854,19 +917,8 @@ async def handle_group_message(message: Message):
         (4.00, 5.00, float(await get_setting("rng_4.00_5.00", "0.05"))),
     ]
 
-    total_weight = sum(r[2] for r in ranges)
-    if total_weight <= 0:
-        selected_range = ranges[0]
-    else:
-        rng_roll = random.uniform(0.0, total_weight)
-        cumulative = 0.0
-        selected_range = ranges[0]
-        for r in ranges:
-            cumulative += r[2]
-            if rng_roll <= cumulative:
-                selected_range = r
-                break
-
+    weights = [r[2] for r in ranges]
+    selected_range = random.choices(ranges, weights=weights, k=1)[0]
     reward = round(random.uniform(selected_range[0], selected_range[1]), 2)
 
     await update_user_balance(user_id, reward)
@@ -954,11 +1006,16 @@ async def build_admin_main_kb(admin_id: int, lang: str) -> InlineKeyboardMarkup:
     if r5: kb.append(r5)
 
     r6 = []
+    if await has_perm(admin_id, "manage_groups"):
+        r6.append(InlineKeyboardButton(text=get_str("admin_btn_groups", lang), callback_data="adm_groups_menu"))
     if await has_perm(admin_id, "manage_settings"):
         r6.append(InlineKeyboardButton(text=get_str("admin_btn_settings", lang), callback_data="adm_settings_menu"))
-    if await has_perm(admin_id, "view_stats"):
-        r6.append(InlineKeyboardButton(text=get_str("admin_btn_stats", lang), callback_data="adm_stats"))
     if r6: kb.append(r6)
+
+    r7 = []
+    if await has_perm(admin_id, "view_stats"):
+        r7.append(InlineKeyboardButton(text=get_str("admin_btn_stats", lang), callback_data="adm_stats"))
+    if r7: kb.append(r7)
 
     kb.append([InlineKeyboardButton(text=get_str("btn_back", lang), callback_data="menu_main")])
     return InlineKeyboardMarkup(inline_keyboard=kb)
@@ -973,13 +1030,106 @@ async def process_admin_main(callback: CallbackQuery, state: FSMContext):
 
     await callback.answer()
     user = await get_user(user_id)
-    lang = user["language"]
+    lang = user["language"] if user else "ru"
 
     await callback.message.edit_text(
         get_str("admin_menu_title", lang),
         reply_markup=await build_admin_main_kb(user_id, lang),
         parse_mode=ParseMode.HTML
     )
+
+# --- УПРАВЛЕНИЕ ГРУППАМИ ---
+@router.callback_query(F.data == "adm_groups_menu")
+async def process_adm_groups_menu(callback: CallbackQuery):
+    admin_id = callback.from_user.id
+    if not await has_perm(admin_id, "manage_groups"):
+        await callback.answer(get_str("no_permission", "ru"), show_alert=True)
+        return
+
+    await callback.answer()
+    groups_list = await db_query("SELECT * FROM groups ORDER BY id DESC", fetchall=True) or []
+
+    text = "🏠 <b>Управление подключенными группами:</b>\n\n"
+    kb = []
+
+    if not groups_list:
+        text += "<i>Подключенных групп пока нет.</i>"
+    else:
+        for g in groups_list:
+            st_icon = "🟢" if g["status"] == 1 else "🔴"
+            title = html.escape(g["title"] or "Без названия")
+            text += f"{st_icon} <b>{title}</b> | ID: <code>{g['chat_id']}</code>\n"
+            kb.append([InlineKeyboardButton(text=f"⚙️ {st_icon} {title}", callback_data=f"adm_group_info:{g['id']}")])
+
+    kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_main")])
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode=ParseMode.HTML)
+
+@router.callback_query(F.data.startswith("adm_group_info:"))
+async def process_adm_group_info(callback: CallbackQuery):
+    admin_id = callback.from_user.id
+    if not await has_perm(admin_id, "manage_groups"):
+        await callback.answer(get_str("no_permission", "ru"), show_alert=True)
+        return
+
+    group_id = int(callback.data.split(":")[1])
+    group = await db_query("SELECT * FROM groups WHERE id = ?", (group_id,), fetchone=True)
+    if not group:
+        await callback.answer("Группа не найдена", show_alert=True)
+        return
+
+    await callback.answer()
+    st_text = "🟢 Активна (награды выдаются)" if group["status"] == 1 else "🔴 Отключена"
+    toggle_btn_text = "🔴 Отключить группу" if group["status"] == 1 else "🟢 Включить группу"
+
+    text = (
+        f"🏠 <b>Детали группы:</b>\n\n"
+        f"📌 <b>Название:</b> {html.escape(group['title'] or '')}\n"
+        f"🆔 <b>Chat ID:</b> <code>{group['chat_id']}</code>\n"
+        f"👤 <b>Добавил ID:</b> <code>{group['added_by']}</code>\n"
+        f"📅 <b>Дата создания:</b> {group['created_at'].split('T')[0]}\n"
+        f"⚙️ <b>Статус:</b> {st_text}"
+    )
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=toggle_btn_text, callback_data=f"adm_group_toggle:{group['id']}")],
+        [InlineKeyboardButton(text="🗑 Удалить группу", callback_data=f"adm_group_delete:{group['id']}")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="adm_groups_menu")]
+    ])
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+
+@router.callback_query(F.data.startswith("adm_group_toggle:"))
+async def process_adm_group_toggle(callback: CallbackQuery):
+    admin_id = callback.from_user.id
+    if not await has_perm(admin_id, "manage_groups"):
+        await callback.answer(get_str("no_permission", "ru"), show_alert=True)
+        return
+
+    group_id = int(callback.data.split(":")[1])
+    group = await db_query("SELECT status FROM groups WHERE id = ?", (group_id,), fetchone=True)
+    if not group:
+        await callback.answer("Группа не найдена", show_alert=True)
+        return
+
+    new_st = 0 if group["status"] == 1 else 1
+    await db_query("UPDATE groups SET status = ? WHERE id = ?", (new_st, group_id))
+    await log_admin_action(admin_id, 0, "toggle_group_status", str(group["status"]), str(new_st))
+
+    await callback.answer("Статус группы изменен!")
+    await process_adm_group_info(callback)
+
+@router.callback_query(F.data.startswith("adm_group_delete:"))
+async def process_adm_group_delete(callback: CallbackQuery):
+    admin_id = callback.from_user.id
+    if not await has_perm(admin_id, "manage_groups"):
+        await callback.answer(get_str("no_permission", "ru"), show_alert=True)
+        return
+
+    group_id = int(callback.data.split(":")[1])
+    await db_query("DELETE FROM groups WHERE id = ?", (group_id,))
+    await log_admin_action(admin_id, 0, "delete_group", str(group_id), "deleted")
+
+    await callback.answer("Группа успешно удалена из базы!", show_alert=True)
+    await process_adm_groups_menu(callback)
 
 # --- СТАТИСТИКА ---
 @router.callback_query(F.data == "adm_stats")
@@ -991,7 +1141,7 @@ async def process_adm_stats(callback: CallbackQuery):
 
     await callback.answer()
     user = await get_user(user_id)
-    lang = user["language"]
+    lang = user["language"] if user else "ru"
 
     total_users = (await db_query("SELECT COUNT(*) as c FROM users", fetchone=True))["c"]
     total_msgs = (await db_query("SELECT COUNT(*) as c FROM messages_history", fetchone=True))["c"]
@@ -1023,7 +1173,7 @@ async def process_adm_stats(callback: CallbackQuery):
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_str("btn_back", lang), callback_data="admin_main")]])
     await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
 
-# --- СПИСОК ПОЛЬЗОВАТЕЛЕЙ (С ПАГИНАЦИЕЙ) ---
+# --- СПИСОК ПОЛЬЗОВАТЕЛЕЙ ---
 @router.callback_query(F.data.startswith("adm_users_page:"))
 async def process_adm_users_page(callback: CallbackQuery):
     user_id = callback.from_user.id
@@ -1037,10 +1187,10 @@ async def process_adm_users_page(callback: CallbackQuery):
     offset = (page - 1) * limit
 
     user = await get_user(user_id)
-    lang = user["language"]
+    lang = user["language"] if user else "ru"
 
     total_count = (await db_query("SELECT COUNT(*) as c FROM users", fetchone=True))["c"]
-    users_list = await db_query("SELECT * FROM users ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset), fetchall=True)
+    users_list = await db_query("SELECT * FROM users ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset), fetchall=True) or []
 
     text = f"👥 <b>Список пользователей (Страница {page})</b>\n\n"
     kb = []
@@ -1072,7 +1222,7 @@ async def process_adm_user_info(callback: CallbackQuery):
 
     await callback.answer()
     admin = await get_user(admin_id)
-    lang = admin["language"]
+    lang = admin["language"] if admin else "ru"
 
     status = "🚫 Заблокирован" if u["is_banned"] else "✅ Активен"
     c_name = html.escape(u['first_name'] or 'Без имени')
@@ -1113,7 +1263,7 @@ async def process_adm_withdraws_active(callback: CallbackQuery):
 
     await callback.answer()
     admin = await get_user(admin_id)
-    lang = admin["language"]
+    lang = admin["language"] if admin else "ru"
 
     items = await db_query("SELECT * FROM withdraws WHERE status IN ('new', 'hold') ORDER BY id DESC", fetchall=True)
 
@@ -1140,6 +1290,9 @@ async def process_adm_wd_manage(callback: CallbackQuery):
     await callback.answer()
     wd_id = int(callback.data.split(":")[1])
     wd = await db_query("SELECT * FROM withdraws WHERE id = ?", (wd_id,), fetchone=True)
+    if not wd:
+        await callback.answer("Заявка не найдена", show_alert=True)
+        return
 
     u = await get_user(wd["user_id"])
     c_name = html.escape(u['first_name']) if u and u['first_name'] else 'Н/Д'
@@ -1172,11 +1325,13 @@ async def process_adm_wd_approve(callback: CallbackQuery):
         return
 
     wd_id = int(callback.data.split(":")[1])
-    now_str = datetime.now().isoformat()
-
     wd = await db_query("SELECT * FROM withdraws WHERE id = ?", (wd_id,), fetchone=True)
-    await db_query("UPDATE withdraws SET status = 'approved', updated_at = ?, admin_id = ? WHERE id = ?", (now_str, admin_id, wd_id))
+    if not wd or wd["status"] in ["approved", "rejected"]:
+        await callback.answer("⚠️ Эта заявка уже обработана!", show_alert=True)
+        return
 
+    now_str = datetime.now().isoformat()
+    await db_query("UPDATE withdraws SET status = 'approved', updated_at = ?, admin_id = ? WHERE id = ?", (now_str, admin_id, wd_id))
     await log_admin_action(admin_id, wd["user_id"], "approve_withdraw", wd["status"], "approved")
 
     u = await get_user(wd["user_id"])
@@ -1198,11 +1353,13 @@ async def process_adm_wd_hold(callback: CallbackQuery):
         return
 
     wd_id = int(callback.data.split(":")[1])
-    now_str = datetime.now().isoformat()
-
     wd = await db_query("SELECT * FROM withdraws WHERE id = ?", (wd_id,), fetchone=True)
-    await db_query("UPDATE withdraws SET status = 'hold', updated_at = ?, admin_id = ? WHERE id = ?", (now_str, admin_id, wd_id))
+    if not wd or wd["status"] in ["approved", "rejected"]:
+        await callback.answer("⚠️ Эта заявка уже обработана!", show_alert=True)
+        return
 
+    now_str = datetime.now().isoformat()
+    await db_query("UPDATE withdraws SET status = 'hold', updated_at = ?, admin_id = ? WHERE id = ?", (now_str, admin_id, wd_id))
     await log_admin_action(admin_id, wd["user_id"], "hold_withdraw", wd["status"], "hold")
 
     u = await get_user(wd["user_id"])
@@ -1223,22 +1380,49 @@ async def process_adm_wd_reject(callback: CallbackQuery, state: FSMContext):
         await callback.answer(get_str("no_permission", "ru"), show_alert=True)
         return
 
-    await callback.answer()
     wd_id = int(callback.data.split(":")[1])
+    wd = await db_query("SELECT status FROM withdraws WHERE id = ?", (wd_id,), fetchone=True)
+    if not wd or wd["status"] in ["approved", "rejected"]:
+        await callback.answer("⚠️ Эта заявка уже обработана!", show_alert=True)
+        return
+
+    await callback.answer()
     await state.update_data(reject_wd_id=wd_id)
     await state.set_state(AdminFSM.waiting_reject_reason)
-
     await callback.message.edit_text("❌ Введите причину отказа для пользователя:")
 
 @router.message(AdminFSM.waiting_reject_reason)
 async def process_reject_reason_input(message: Message, state: FSMContext):
     admin_id = message.from_user.id
+
+    if not await has_perm(admin_id, "manage_withdraws"):
+        await message.answer(get_str("no_permission", "ru"))
+        await state.clear()
+        return
+
     data = await state.get_data()
-    wd_id = data["reject_wd_id"]
-    reason = message.text
+    wd_id = data.get("reject_wd_id")
+
+    if not wd_id:
+        await message.answer("⚠️ Ошибка: идентификатор заявки не найден.")
+        await state.clear()
+        return
+
+    raw_reason = message.text or "Не указана"
+    reason = html.escape(raw_reason.strip())
     now_str = datetime.now().isoformat()
 
     wd = await db_query("SELECT * FROM withdraws WHERE id = ?", (wd_id,), fetchone=True)
+
+    if not wd:
+        await message.answer("⚠️ Заявка не найдена.")
+        await state.clear()
+        return
+
+    if wd["status"] in ["approved", "rejected"]:
+        await message.answer("⚠️ Эта заявка уже была обработана ранее.")
+        await state.clear()
+        return
 
     await db_query("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (wd["amount"], wd["user_id"]))
     await db_query("""
@@ -1250,13 +1434,23 @@ async def process_reject_reason_input(message: Message, state: FSMContext):
     u = await get_user(wd["user_id"])
     if u:
         try:
-            msg = get_str("withdraw_user_notif_reject", u["language"], withdraw_id=wd_id, amount=wd["amount"], currency=get_str("currency", u["language"]), reason=reason)
+            msg = get_str(
+                "withdraw_user_notif_reject",
+                u["language"],
+                withdraw_id=wd_id,
+                amount=wd["amount"],
+                currency=get_str("currency", u["language"]),
+                reason=reason
+            )
             await bot.send_message(u["telegram_id"], msg, parse_mode=ParseMode.HTML)
         except Exception:
             pass
 
     await state.clear()
-    await message.answer(f"❌ Заявка #{wd_id} отклонена. Средства вернулись на баланс пользователя.", reply_markup=await build_admin_main_kb(admin_id, "ru"))
+    await message.answer(
+        f"❌ Заявка #{wd_id} отклонена. Средства ({wd['amount']}) вернулись на баланс пользователя.",
+        reply_markup=await build_admin_main_kb(admin_id, "ru")
+    )
 
 # --- ИСТОРИЯ ВЫВОДОВ ---
 @router.callback_query(F.data.startswith("adm_withdraws_hist:"))
@@ -1268,13 +1462,14 @@ async def process_adm_withdraws_history(callback: CallbackQuery):
 
     await callback.answer()
     admin = await get_user(admin_id)
-    lang = admin["language"]
+    lang = admin["language"] if admin else "ru"
 
-    items = await db_query("SELECT * FROM withdraws ORDER BY id DESC LIMIT 20", fetchall=True)
+    items = await db_query("SELECT * FROM withdraws ORDER BY id DESC LIMIT 20", fetchall=True) or []
 
     text = "📚 <b>История выводов (Последние 20):</b>\n\n"
     for item in items:
-        text += f"#{item['id']} | User: <code>{item['user_id']}</code> | ⭐ {item['amount']} | Статус: {item['status']} | {item['created_at'].split('T')[0]}\n"
+        created = item['created_at'].split('T')[0] if 'T' in item['created_at'] else item['created_at']
+        text += f"#{item['id']} | User: <code>{item['user_id']}</code> | ⭐ {item['amount']} | Статус: {item['status']} | {created}\n"
 
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_str("btn_back", lang), callback_data="admin_main")]])
     await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
@@ -1310,7 +1505,7 @@ async def process_adm_broadcast_confirm(callback: CallbackQuery, state: FSMConte
 
     await callback.message.edit_text("⏳ Рассылка запущена...")
 
-    users = await db_query("SELECT telegram_id FROM users WHERE is_banned = 0", fetchall=True)
+    users = await db_query("SELECT telegram_id FROM users WHERE is_banned = 0", fetchall=True) or []
 
     success = 0
     errors = 0
@@ -1381,7 +1576,8 @@ async def process_ban_reason_input(message: Message, state: FSMContext):
     data = await state.get_data()
     target_id = data["ban_target_id"]
     minutes = data["ban_minutes"]
-    reason = message.text
+    raw_reason = message.text or "Не указана"
+    reason = html.escape(raw_reason.strip())
     admin_id = message.from_user.id
 
     ban_until_str = None
@@ -1419,7 +1615,7 @@ async def process_adm_user_unban_act(callback: CallbackQuery):
     await callback.answer("✅ Пользователь разбанен!")
     await callback.message.edit_text(f"✅ Пользователь <code>{target_id}</code> успешно разблокирован.", parse_mode=ParseMode.HTML)
 
-# --- ИЗМЕНЕНИЕ БАЛАНСА (ВЫДАЧА / СПИСАНИЕ) ---
+# --- ИЗМЕНЕНИЕ БАЛАНСА ---
 @router.callback_query(F.data == "adm_balance_menu")
 async def process_adm_balance_menu(callback: CallbackQuery, state: FSMContext):
     admin_id = callback.from_user.id
@@ -1544,14 +1740,14 @@ async def process_adm_admins_menu(callback: CallbackQuery):
         return
 
     await callback.answer()
-    admins_list = await db_query("SELECT * FROM admins", fetchall=True)
+    admins_list = await db_query("SELECT * FROM admins", fetchall=True) or []
 
     text = "👮 <b>Список администраторов:</b>\n\n"
     kb = []
     for adm in admins_list:
         text += f"• <code>{adm['telegram_id']}</code> (Добавил: <code>{adm['added_by']}</code>)\n"
         if adm['telegram_id'] != OWNER_ID:
-            kb.append([InlineKeyboardButton(text=f"⚙️ Права `{adm['telegram_id']}`", callback_data=f"adm_perm_edit:{adm['telegram_id']}")])
+            kb.append([InlineKeyboardButton(text=f"⚙️ Права <code>{adm['telegram_id']}</code>", callback_data=f"adm_perm_edit:{adm['telegram_id']}")])
 
     kb.append([InlineKeyboardButton(text="➕ Добавить администратора", callback_data="adm_add_admin")])
     kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_main")])
@@ -1596,7 +1792,7 @@ async def process_adm_perm_edit(callback: CallbackQuery):
     await callback.answer()
     target_adm_id = int(callback.data.split(":")[1])
 
-    perms = await db_query("SELECT permission_name, enabled FROM permissions WHERE admin_id = ?", (target_adm_id,), fetchall=True)
+    perms = await db_query("SELECT permission_name, enabled FROM permissions WHERE admin_id = ?", (target_adm_id,), fetchall=True) or []
     perm_dict = {p["permission_name"]: p["enabled"] for p in perms}
 
     kb = []
@@ -1607,7 +1803,18 @@ async def process_adm_perm_edit(callback: CallbackQuery):
 
     kb.append([InlineKeyboardButton(text="🗑 Удалить администратора", callback_data=f"adm_remove_admin:{target_adm_id}")])
     kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="adm_admins_menu")])
-    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode=ParseMode.HTML)
+
+    try:
+        await callback.message.edit_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
+            parse_mode=ParseMode.HTML
+        )
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            pass
+        else:
+            raise e
 
 @router.callback_query(F.data.startswith("adm_perm_toggle:"))
 async def process_adm_perm_toggle(callback: CallbackQuery):
@@ -1625,7 +1832,15 @@ async def process_adm_perm_toggle(callback: CallbackQuery):
     new_val = 0 if curr == 1 else 1
     await db_query("INSERT OR REPLACE INTO permissions (admin_id, permission_name, enabled) VALUES (?, ?, ?)", (target_adm_id, perm_name, new_val))
 
-    await process_adm_perm_edit(callback)
+    try:
+        await process_adm_perm_edit(callback)
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            await callback.answer()
+        else:
+            raise e
+    except Exception:
+        await callback.answer("⚠️ Ошибка при обновлении прав", show_alert=True)
 
 @router.callback_query(F.data.startswith("adm_remove_admin:"))
 async def process_adm_remove_admin(callback: CallbackQuery):
@@ -1739,7 +1954,8 @@ async def process_adm_set_edit(callback: CallbackQuery, state: FSMContext):
 async def process_setting_value_input(message: Message, state: FSMContext):
     data = await state.get_data()
     key = data["setting_key"]
-    val = message.text.strip()
+    raw_val = message.text or ""
+    val = raw_val.strip()
 
     await set_setting(key, val)
     await log_admin_action(message.from_user.id, 0, f"set_setting_{key}", "", val)
