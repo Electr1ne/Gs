@@ -1,4 +1,5 @@
 import asyncio
+import html
 import logging
 import os
 import random
@@ -19,10 +20,6 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     Message,
 )
-from dotenv import load_dotenv
-
-# Загрузка переменных окружения из .env
-load_dotenv()
 
 TOKEN = os.getenv("TOKEN")
 OWNER_ID = os.getenv("OWNER_ID")
@@ -96,41 +93,41 @@ STRINGS = {
         "btn_bonus": "🎁 Ежедневный бонус",
         "btn_change_lang": "🌐 Сменить язык",
         "btn_open_chat": "💬 Открыть чат",
-        "main_menu_text": "🌟 **Главное меню GiftEz Stars**\n\nВыберите нужный раздел в меню ниже:",
+        "main_menu_text": "🌟 <b>Главное меню GiftEz Stars</b>\n\nВыберите нужный раздел в меню ниже:",
         "profile_text": (
-            "👤 **Имя:** {name}\n"
-            "🆔 **ID:** `{user_id}`\n"
-            "⭐ **Баланс:** {balance:.2f} {currency}\n"
-            "📅 **Регистрация:** {reg_date}\n"
-            "🌐 **Язык:** {lang_name}"
+            "👤 <b>Имя:</b> {name}\n"
+            "🆔 <b>ID:</b> <code>{user_id}</code>\n"
+            "⭐ <b>Баланс:</b> {balance:.2f} {currency}\n"
+            "📅 <b>Регистрация:</b> {reg_date}\n"
+            "🌐 <b>Язык:</b> {lang_name}"
         ),
         "earn_text": (
-            "💰 **Заработок Звезд**\n\n"
+            "💰 <b>Заработок Звезд</b>\n\n"
             "Общайтесь в наших подключенных группах и получайте Звезды за активность!\n"
             "Накапливайте баланс и обменивайте его на настоящие Telegram Stars."
         ),
         "no_groups": "К сожалению, пока нет доступных подключенных групп.",
         "select_group": "💬 Выберите группу для общения и заработка:",
-        "bonus_cooldown": "⏳ Следующий ежедневный бонус будет доступен через:\n\n**{hours} ч. {minutes} мин.**",
-        "bonus_received": "🎁 **Ежедневный бонус получен!**\n\nВам начислено: **+{amount:.2f} {currency}**",
+        "bonus_cooldown": "⏳ Следующий ежедневный бонус будет доступен через:\n\n<b>{hours} ч. {minutes} мин.</b>",
+        "bonus_received": "🎁 <b>Ежедневный бонус получен!</b>\n\nВам начислено: <b>+{amount:.2f} {currency}</b>",
         "bonus_disabled": "🎁 Ежедневный бонус временно отключен администрацией.",
         "withdraw_disabled": "⚠️ Выводы временно недоступны.",
-        "withdraw_menu": "⭐ **Вывод Звезд**\n\nВыберите сумму для создания заявки на вывод:",
-        "withdraw_insufficient": "❌ **Недостаточно Звезд**\n\nВаш баланс: {balance:.2f} {currency}\nНеобходимо: {required} {currency}",
-        "withdraw_cooldown": "⏳ Новую заявку можно создать через:\n\n**{minutes} мин. {seconds} сек.**",
-        "withdraw_created": "📤 **Заявка на вывод создана!**\n\nСумма: **{amount} {currency}**\nСтатус: 🟡 **Новая**\n\nАдминистрация проверит её в ближайшее время.",
+        "withdraw_menu": "⭐ <b>Вывод Звезд</b>\n\nВыберите сумму для создания заявки на вывод:",
+        "withdraw_insufficient": "❌ <b>Недостаточно Звезд</b>\n\nВаш баланс: {balance:.2f} {currency}\nНеобходимо: {required} {currency}",
+        "withdraw_cooldown": "⏳ Новую заявку можно создать через:\n\n<b>{minutes} мин. {seconds} сек.</b>",
+        "withdraw_created": "📤 <b>Заявка на вывод создана!</b>\n\nСумма: <b>{amount} {currency}</b>\nСтатус: 🟡 <b>Новая</b>\n\nАдминистрация проверит её в ближайшее время.",
         "withdraw_user_notif_ok": "✅ Ваша заявка на вывод #{withdraw_id} на сумму {amount} {currency} успешно выполнена!",
-        "withdraw_user_notif_reject": "❌ Ваша заявка на вывод #{withdraw_id} на сумму {amount} {currency} была отклонена.\n\n**Причина:** {reason}",
+        "withdraw_user_notif_reject": "❌ Ваша заявка на вывод #{withdraw_id} на сумму {amount} {currency} была отклонена.\n\n<b>Причина:</b> {reason}",
         "withdraw_user_notif_hold": "🟠 Ваша заявка на вывод #{withdraw_id} на сумму {amount} {currency} временно отложена.",
         "sub_check_failed": "❌ Вы всё еще не подписаны на канал {channel}. Подпишитесь и попробуйте снова!",
-        "banned_text": "🚫 **Вы заблокированы в боте.**\n\nПричина: {reason}",
+        "banned_text": "🚫 <b>Вы заблокированы в боте.</b>\n\nПричина: {reason}",
         "group_not_subbed": "⚠️ {name}, для получения Звезд необходимо подписаться на канал {channel}!",
-        "group_reward_msg": "🎉 {name}, вам начислено **+{amount:.2f}** {currency} за активность в чате!",
+        "group_reward_msg": "🎉 {name}, вам начислено <b>+{amount:.2f}</b> {currency} за активность в чате!",
         "admin_only_add": "❌ Добавлять бота в группы могут только администраторы группы.",
-        "group_connected": "✅ **GiftEz Stars успешно подключен!**\n\nТеперь пользователи могут получать Звезды за активность в этом чате.",
+        "group_connected": "✅ <b>GiftEz Stars успешно подключен!</b>\n\nТеперь пользователи могут получать Звезды за активность в этом чате.",
         "group_already_connected": "ℹ️ Эта группа уже подключена к системе.",
         # Админка
-        "admin_menu_title": "⚙️ **Админ-панель Управления**",
+        "admin_menu_title": "⚙️ <b>Админ-панель Управления</b>",
         "admin_btn_users": "👥 Пользователи",
         "admin_btn_withdraws": "📤 Активные заявки",
         "admin_btn_history": "📚 История выводов",
@@ -164,41 +161,41 @@ STRINGS = {
         "btn_bonus": "🎁 Daily Bonus",
         "btn_change_lang": "🌐 Change Language",
         "btn_open_chat": "💬 Open Chat",
-        "main_menu_text": "🌟 **GiftEz Stars Main Menu**\n\nSelect a section from the menu below:",
+        "main_menu_text": "🌟 <b>GiftEz Stars Main Menu</b>\n\nSelect a section from the menu below:",
         "profile_text": (
-            "👤 **Name:** {name}\n"
-            "🆔 **ID:** `{user_id}`\n"
-            "⭐ **Balance:** {balance:.2f} {currency}\n"
-            "📅 **Registered:** {reg_date}\n"
-            "🌐 **Language:** {lang_name}"
+            "👤 <b>Name:</b> {name}\n"
+            "🆔 <b>ID:</b> <code>{user_id}</code>\n"
+            "⭐ <b>Balance:</b> {balance:.2f} {currency}\n"
+            "📅 <b>Registered:</b> {reg_date}\n"
+            "🌐 <b>Language:</b> {lang_name}"
         ),
         "earn_text": (
-            "💰 **Earn Stars**\n\n"
+            "💰 <b>Earn Stars</b>\n\n"
             "Chat in our connected groups and receive Stars for your activity!\n"
             "Accumulate balance and exchange it for real Telegram Stars."
         ),
         "no_groups": "Unfortunately, there are no connected groups available yet.",
         "select_group": "💬 Select a group to chat and earn:",
-        "bonus_cooldown": "⏳ Next daily bonus will be available in:\n\n**{hours} h. {minutes} min.**",
-        "bonus_received": "🎁 **Daily Bonus Claimed!**\n\nYou received: **+{amount:.2f} {currency}**",
+        "bonus_cooldown": "⏳ Next daily bonus will be available in:\n\n<b>{hours} h. {minutes} min.</b>",
+        "bonus_received": "🎁 <b>Daily Bonus Claimed!</b>\n\nYou received: <b>+{amount:.2f} {currency}</b>",
         "bonus_disabled": "🎁 Daily bonus is temporarily disabled by administration.",
         "withdraw_disabled": "⚠️ Withdrawals are temporarily unavailable.",
-        "withdraw_menu": "⭐ **Withdraw Stars**\n\nSelect amount to create a withdrawal request:",
-        "withdraw_insufficient": "❌ **Not enough Stars**\n\nYour balance: {balance:.2f} {currency}\nRequired: {required} {currency}",
-        "withdraw_cooldown": "⏳ You can create a new request in:\n\n**{minutes} min. {seconds} sec.**",
-        "withdraw_created": "📤 **Withdrawal Request Created!**\n\nAmount: **{amount} {currency}**\nStatus: 🟡 **New**\n\nAdmins will review it shortly.",
+        "withdraw_menu": "⭐ <b>Withdraw Stars</b>\n\nSelect amount to create a withdrawal request:",
+        "withdraw_insufficient": "❌ <b>Not enough Stars</b>\n\nYour balance: {balance:.2f} {currency}\nRequired: {required} {currency}",
+        "withdraw_cooldown": "⏳ You can create a new request in:\n\n<b>{minutes} min. {seconds} sec.</b>",
+        "withdraw_created": "📤 <b>Withdrawal Request Created!</b>\n\nAmount: <b>{amount} {currency}</b>\nStatus: 🟡 <b>New</b>\n\nAdmins will review it shortly.",
         "withdraw_user_notif_ok": "✅ Your withdrawal request #{withdraw_id} for {amount} {currency} has been approved!",
-        "withdraw_user_notif_reject": "❌ Your withdrawal request #{withdraw_id} for {amount} {currency} was rejected.\n\n**Reason:** {reason}",
+        "withdraw_user_notif_reject": "❌ Your withdrawal request #{withdraw_id} for {amount} {currency} was rejected.\n\n<b>Reason:</b> {reason}",
         "withdraw_user_notif_hold": "🟠 Your withdrawal request #{withdraw_id} for {amount} {currency} is put on hold.",
         "sub_check_failed": "❌ You are still not subscribed to {channel}. Please subscribe and try again!",
-        "banned_text": "🚫 **You are banned in the bot.**\n\nReason: {reason}",
+        "banned_text": "🚫 <b>You are banned in the bot.</b>\n\nReason: {reason}",
         "group_not_subbed": "⚠️ {name}, you must subscribe to {channel} to earn Stars!",
-        "group_reward_msg": "🎉 {name}, you received **+{amount:.2f}** {currency} for chat activity!",
+        "group_reward_msg": "🎉 {name}, you received <b>+{amount:.2f}</b> {currency} for chat activity!",
         "admin_only_add": "❌ Only group administrators can add this bot.",
-        "group_connected": "✅ **GiftEz Stars successfully connected!**\n\nUsers can now earn Stars for activity in this chat.",
+        "group_connected": "✅ <b>GiftEz Stars successfully connected!</b>\n\nUsers can now earn Stars for activity in this chat.",
         "group_already_connected": "ℹ️ This group is already connected.",
         # Admin
-        "admin_menu_title": "⚙️ **Admin Control Panel**",
+        "admin_menu_title": "⚙️ <b>Admin Control Panel</b>",
         "admin_btn_users": "👥 Users",
         "admin_btn_withdraws": "📤 Active Requests",
         "admin_btn_history": "📚 Withdrawal History",
@@ -225,7 +222,8 @@ ALL_PERMISSIONS = [
 def get_str(key: str, lang: str = "ru", **kwargs) -> str:
     lang_code = lang if lang in STRINGS else "ru"
     template = STRINGS[lang_code].get(key, STRINGS["ru"].get(key, key))
-    return template.format(**kwargs)
+    escaped_kwargs = {k: html.escape(str(v)) if isinstance(v, str) else v for k, v in kwargs.items()}
+    return template.format(**escaped_kwargs)
 
 # ==============================================================================
 # БАЗА ДАННЫХ И МИГРАЦИИ
@@ -522,14 +520,14 @@ async def cmd_start(message: Message, state: FSMContext):
         await message.answer(
             get_str("select_lang", "ru"),
             reply_markup=get_lang_keyboard(),
-            parse_mode=ParseMode.MARKDOWN
+            parse_mode=ParseMode.HTML
         )
         return
 
     await update_user_activity(user_id)
 
     if await check_user_ban_status(user):
-        await message.answer(get_str("banned_text", user["language"], reason=user.get("ban_until") or "Нарушение правил"))
+        await message.answer(get_str("banned_text", user["language"], reason=user.get("ban_until") or "Нарушение правил"), parse_mode=ParseMode.HTML)
         return
 
     is_subbed = await check_channel_subscription(user_id)
@@ -537,14 +535,14 @@ async def cmd_start(message: Message, state: FSMContext):
         await message.answer(
             get_str("sub_required", user["language"], channel=CHANNEL_USERNAME),
             reply_markup=get_sub_keyboard(user["language"]),
-            parse_mode=ParseMode.MARKDOWN
+            parse_mode=ParseMode.HTML
         )
         return
 
     await message.answer(
         get_str("main_menu_text", user["language"]),
         reply_markup=await get_main_menu_keyboard(user_id, user["language"]),
-        parse_mode=ParseMode.MARKDOWN
+        parse_mode=ParseMode.HTML
     )
 
 @router.callback_query(F.data.startswith("set_lang:"))
@@ -559,13 +557,13 @@ async def process_set_language(callback: CallbackQuery):
         await callback.message.edit_text(
             get_str("sub_required", lang, channel=CHANNEL_USERNAME),
             reply_markup=get_sub_keyboard(lang),
-            parse_mode=ParseMode.MARKDOWN
+            parse_mode=ParseMode.HTML
         )
     else:
         await callback.message.edit_text(
             get_str("main_menu_text", lang),
             reply_markup=await get_main_menu_keyboard(user_id, lang),
-            parse_mode=ParseMode.MARKDOWN
+            parse_mode=ParseMode.HTML
         )
 
 @router.callback_query(F.data == "check_subscription")
@@ -580,7 +578,7 @@ async def process_check_subscription(callback: CallbackQuery):
         await callback.message.edit_text(
             get_str("main_menu_text", lang),
             reply_markup=await get_main_menu_keyboard(user_id, lang),
-            parse_mode=ParseMode.MARKDOWN
+            parse_mode=ParseMode.HTML
         )
     else:
         await callback.answer(get_str("sub_check_failed", lang, channel=CHANNEL_USERNAME), show_alert=True)
@@ -596,7 +594,7 @@ async def process_menu_main(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
         get_str("main_menu_text", lang),
         reply_markup=await get_main_menu_keyboard(user_id, lang),
-        parse_mode=ParseMode.MARKDOWN
+        parse_mode=ParseMode.HTML
     )
 
 @router.callback_query(F.data == "menu_profile")
@@ -624,7 +622,7 @@ async def process_menu_profile(callback: CallbackQuery):
     await callback.message.edit_text(
         text,
         reply_markup=await get_profile_keyboard(user_id, lang),
-        parse_mode=ParseMode.MARKDOWN
+        parse_mode=ParseMode.HTML
     )
 
 @router.callback_query(F.data == "user_change_lang")
@@ -633,7 +631,7 @@ async def process_user_change_lang(callback: CallbackQuery):
     await callback.message.edit_text(
         get_str("select_lang", "ru"),
         reply_markup=get_lang_keyboard(),
-        parse_mode=ParseMode.MARKDOWN
+        parse_mode=ParseMode.HTML
     )
 
 @router.callback_query(F.data == "menu_earn")
@@ -656,7 +654,7 @@ async def process_menu_earn(callback: CallbackQuery):
     await callback.message.edit_text(
         text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
-        parse_mode=ParseMode.MARKDOWN
+        parse_mode=ParseMode.HTML
     )
 
 # ==============================================================================
@@ -688,7 +686,7 @@ async def process_user_bonus(callback: CallbackQuery):
             minutes, _ = divmod(remainder, 60)
             text = get_str("bonus_cooldown", lang, hours=hours, minutes=minutes)
             kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_str("btn_back", lang), callback_data="menu_profile")]])
-            await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.MARKDOWN)
+            await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
             return
 
     await callback.answer()
@@ -701,7 +699,7 @@ async def process_user_bonus(callback: CallbackQuery):
 
     text = get_str("bonus_received", lang, amount=reward, currency=currency)
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_str("btn_back", lang), callback_data="menu_profile")]])
-    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.MARKDOWN)
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
 
 # ==============================================================================
 # ВЫВОД ЗВЕЗД
@@ -717,7 +715,7 @@ async def process_user_withdraw_menu(callback: CallbackQuery):
     await callback.message.edit_text(
         get_str("withdraw_menu", lang),
         reply_markup=get_withdraw_amounts_keyboard(lang),
-        parse_mode=ParseMode.MARKDOWN
+        parse_mode=ParseMode.HTML
     )
 
 @router.callback_query(F.data.startswith("withdraw_req:"))
@@ -736,7 +734,7 @@ async def process_create_withdraw(callback: CallbackQuery):
         await callback.answer()
         text = get_str("withdraw_insufficient", lang, balance=user["balance"], currency=currency, required=amount)
         kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_str("btn_back", lang), callback_data="user_withdraw")]])
-        await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.MARKDOWN)
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
         return
 
     cooldown_sec = int(await get_setting("withdraw_cooldown", "300"))
@@ -751,7 +749,7 @@ async def process_create_withdraw(callback: CallbackQuery):
             mins, secs = divmod(int(remaining.total_seconds()), 60)
             text = get_str("withdraw_cooldown", lang, minutes=mins, seconds=secs)
             kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_str("btn_back", lang), callback_data="user_withdraw")]])
-            await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.MARKDOWN)
+            await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
             return
 
     await db_query("UPDATE users SET balance = balance - ? WHERE telegram_id = ?", (amount, user_id))
@@ -764,15 +762,18 @@ async def process_create_withdraw(callback: CallbackQuery):
     await callback.answer()
     text = get_str("withdraw_created", lang, amount=amount, currency=currency)
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_str("btn_back", lang), callback_data="menu_profile")]])
-    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.MARKDOWN)
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+
+    clean_first_name = html.escape(user['first_name'] or '')
+    clean_username = html.escape(user['username'] or 'нет')
 
     admin_text = (
-        f"📤 **Новая заявка на вывод #{withdraw_id}**\n\n"
-        f"👤 **Пользователь:** {user['first_name']}\n"
-        f"📛 **Username:** @{user['username']}\n"
-        f"🆔 **ID:** `{user['telegram_id']}`\n"
-        f"⭐ **Сумма:** {amount} {currency}\n"
-        f"📅 **Дата:** {now_str.split('T')[0]}"
+        f"📤 <b>Новая заявка на вывод #{withdraw_id}</b>\n\n"
+        f"👤 <b>Пользователь:</b> {clean_first_name}\n"
+        f"📛 <b>Username:</b> @{clean_username}\n"
+        f"🆔 <b>ID:</b> <code>{user['telegram_id']}</code>\n"
+        f"⭐ <b>Сумма:</b> {amount} {currency}\n"
+        f"📅 <b>Дата:</b> {now_str.split('T')[0]}"
     )
     admin_kb = InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -786,7 +787,7 @@ async def process_create_withdraw(callback: CallbackQuery):
     for adm in admins:
         if await has_perm(adm["telegram_id"], "manage_withdraws"):
             try:
-                await bot.send_message(adm["telegram_id"], admin_text, reply_markup=admin_kb, parse_mode=ParseMode.MARKDOWN)
+                await bot.send_message(adm["telegram_id"], admin_text, reply_markup=admin_kb, parse_mode=ParseMode.HTML)
             except Exception:
                 pass
 
@@ -794,7 +795,7 @@ async def process_create_withdraw(callback: CallbackQuery):
 # НАГРАДЫ ЗА СООБЩЕНИЯ В ГРУППАХ
 # ==============================================================================
 
-@router.message(F.chat.type.in_([ChatType.GROUP, ChatType.SUPERGROUP]))
+@router.message(F.chat.type.in_([ChatType.GROUP, ChatType.SUPERGROUP]), ~F.sender_chat)
 async def handle_group_message(message: Message):
     if not message.from_user or message.from_user.is_bot:
         return
@@ -830,9 +831,9 @@ async def handle_group_message(message: Message):
     if not is_subbed:
         if user_id not in user_last_msg_time or (now - user_last_msg_time[user_id] > timedelta(minutes=5)):
             user_last_msg_time[user_id] = now
-            name_link = f"[{message.from_user.first_name}](tg://user?id={user_id})"
+            name_link = f'<a href="tg://user?id={user_id}">{html.escape(message.from_user.first_name)}</a>'
             text = get_str("group_not_subbed", user["language"], name=name_link, channel=CHANNEL_USERNAME)
-            await message.reply(text, parse_mode=ParseMode.MARKDOWN)
+            await message.reply(text, parse_mode=ParseMode.HTML)
         return
 
     chance = float(await get_setting("msg_reward_chance", "15"))
@@ -874,9 +875,9 @@ async def handle_group_message(message: Message):
     await db_query("INSERT INTO messages_history (user_id, group_id, created_at) VALUES (?, ?, ?)", (user_id, chat_id, now.isoformat()))
 
     currency = get_str("currency", user["language"])
-    name_link = f"[{message.from_user.first_name}](tg://user?id={user_id})"
+    name_link = f'<a href="tg://user?id={user_id}">{html.escape(message.from_user.first_name)}</a>'
     text = get_str("group_reward_msg", user["language"], name=name_link, amount=reward, currency=currency)
-    await message.reply(text, parse_mode=ParseMode.MARKDOWN)
+    await message.reply(text, parse_mode=ParseMode.HTML)
 
 # ==============================================================================
 # ПОДКЛЮЧЕНИЕ ГРУППЫ БОТОМ
@@ -909,7 +910,7 @@ async def process_bot_added_to_group(event: ChatMemberUpdated):
             VALUES (?, ?, ?, ?, 1)
         """, (chat_id, title, added_by_user.id, now_str))
 
-        await bot.send_message(chat_id, get_str("group_connected", "ru"), parse_mode=ParseMode.MARKDOWN)
+        await bot.send_message(chat_id, get_str("group_connected", "ru"), parse_mode=ParseMode.HTML)
 
 # ==============================================================================
 # АДМИН-ПАНЕЛЬ
@@ -977,7 +978,7 @@ async def process_admin_main(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
         get_str("admin_menu_title", lang),
         reply_markup=await build_admin_main_kb(user_id, lang),
-        parse_mode=ParseMode.MARKDOWN
+        parse_mode=ParseMode.HTML
     )
 
 # --- СТАТИСТИКА ---
@@ -1006,21 +1007,21 @@ async def process_adm_stats(callback: CallbackQuery):
     total_groups = (await db_query("SELECT COUNT(*) as c FROM groups WHERE status = 1", fetchone=True))["c"]
 
     text = (
-        f"📊 **Системная Статистика**\n\n"
-        f"👥 **Всего пользователей:** {total_users}\n"
-        f"💬 **Обработано сообщений:** {total_msgs}\n"
-        f"⭐ **Всего Звезд на балансах:** {total_stars:.2f}\n"
-        f"🎁 **Выдано ежедневных бонусов:** {total_bonuses}\n"
-        f"📤 **Всего заявок на вывод:** {total_wd}\n"
+        f"📊 <b>Системная Статистика</b>\n\n"
+        f"👥 <b>Всего пользователей:</b> {total_users}\n"
+        f"💬 <b>Обработано сообщений:</b> {total_msgs}\n"
+        f"⭐ <b>Всего Звезд на балансах:</b> {total_stars:.2f}\n"
+        f"🎁 <b>Выдано ежедневных бонусов:</b> {total_bonuses}\n"
+        f"📤 <b>Всего заявок на вывод:</b> {total_wd}\n"
         f"  └ 🟢 Выполнено: {ok_wd}\n"
         f"  └ 🔴 Отклонено: {err_wd}\n"
         f"  └ 🟠 Отложено: {hold_wd}\n"
-        f"🚫 **Заблокировано пользователей:** {banned_users}\n"
-        f"👮 **Администраторов:** {total_admins}\n"
-        f"🏠 **Подключенных групп:** {total_groups}"
+        f"🚫 <b>Заблокировано пользователей:</b> {banned_users}\n"
+        f"👮 <b>Администраторов:</b> {total_admins}\n"
+        f"🏠 <b>Подключенных групп:</b> {total_groups}"
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_str("btn_back", lang), callback_data="admin_main")]])
-    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.MARKDOWN)
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
 
 # --- СПИСОК ПОЛЬЗОВАТЕЛЕЙ (С ПАГИНАЦИЕЙ) ---
 @router.callback_query(F.data.startswith("adm_users_page:"))
@@ -1041,11 +1042,13 @@ async def process_adm_users_page(callback: CallbackQuery):
     total_count = (await db_query("SELECT COUNT(*) as c FROM users", fetchone=True))["c"]
     users_list = await db_query("SELECT * FROM users ORDER BY id DESC LIMIT ? OFFSET ?", (limit, offset), fetchall=True)
 
-    text = f"👥 **Список пользователей (Страница {page})**\n\n"
+    text = f"👥 <b>Список пользователей (Страница {page})</b>\n\n"
     kb = []
     for u in users_list:
-        text += f"👤 **{u['first_name']}** | @{u['username']} | `{u['telegram_id']}` | ⭐ {u['balance']:.2f}\n"
-        kb.append([InlineKeyboardButton(text=f"👤 {u['first_name']} ({u['telegram_id']})", callback_data=f"adm_user_info:{u['telegram_id']}")])
+        c_name = html.escape(u['first_name'] or 'Без имени')
+        c_username = html.escape(u['username'] or 'нет')
+        text += f"👤 <b>{c_name}</b> | @{c_username} | <code>{u['telegram_id']}</code> | ⭐ {u['balance']:.2f}\n"
+        kb.append([InlineKeyboardButton(text=f"👤 {u['first_name'] or 'User'} ({u['telegram_id']})", callback_data=f"adm_user_info:{u['telegram_id']}")])
 
     nav = []
     if page > 1:
@@ -1056,7 +1059,7 @@ async def process_adm_users_page(callback: CallbackQuery):
         kb.append(nav)
 
     kb.append([InlineKeyboardButton(text=get_str("btn_back", lang), callback_data="admin_main")])
-    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode=ParseMode.MARKDOWN)
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode=ParseMode.HTML)
 
 @router.callback_query(F.data.startswith("adm_user_info:"))
 async def process_adm_user_info(callback: CallbackQuery):
@@ -1072,16 +1075,19 @@ async def process_adm_user_info(callback: CallbackQuery):
     lang = admin["language"]
 
     status = "🚫 Заблокирован" if u["is_banned"] else "✅ Активен"
+    c_name = html.escape(u['first_name'] or 'Без имени')
+    c_username = html.escape(u['username'] or 'нет')
+
     text = (
-        f"👤 **Информация о пользователе**\n\n"
-        f"👤 **Имя:** {u['first_name']}\n"
-        f"📛 **Username:** @{u['username']}\n"
-        f"🆔 **ID:** `{u['telegram_id']}`\n"
-        f"⭐ **Баланс:** {u['balance']:.2f}\n"
-        f"📅 **Регистрация:** {u['register_date']}\n"
-        f"🌐 **Язык:** {u['language']}\n"
-        f"📌 **Статус:** {status}\n"
-        f"⏱ **Активность:** {u['last_activity']}"
+        f"👤 <b>Информация о пользователе</b>\n\n"
+        f"👤 <b>Имя:</b> {c_name}\n"
+        f"📛 <b>Username:</b> @{c_username}\n"
+        f"🆔 <b>ID:</b> <code>{u['telegram_id']}</code>\n"
+        f"⭐ <b>Баланс:</b> {u['balance']:.2f}\n"
+        f"📅 <b>Регистрация:</b> {u['register_date']}\n"
+        f"🌐 <b>Язык:</b> {u['language']}\n"
+        f"📌 <b>Статус:</b> {status}\n"
+        f"⏱ <b>Активность:</b> {u['last_activity']}"
     )
 
     kb = []
@@ -1095,7 +1101,7 @@ async def process_adm_user_info(callback: CallbackQuery):
         kb.append([InlineKeyboardButton(text="✅ Разбанить", callback_data=f"adm_user_unban_act:{u['telegram_id']}")])
 
     kb.append([InlineKeyboardButton(text=get_str("btn_back", lang), callback_data="adm_users_page:1")])
-    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode=ParseMode.MARKDOWN)
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode=ParseMode.HTML)
 
 # --- ВЫВОДЫ ЗАЯВКИ ---
 @router.callback_query(F.data.startswith("adm_withdraws_act:"))
@@ -1112,22 +1118,22 @@ async def process_adm_withdraws_active(callback: CallbackQuery):
     items = await db_query("SELECT * FROM withdraws WHERE status IN ('new', 'hold') ORDER BY id DESC", fetchall=True)
 
     if not items:
-        text = "📤 **Активных заявок на вывод нет.**"
+        text = "📤 <b>Активных заявок на вывод нет.</b>"
         kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_str("btn_back", lang), callback_data="admin_main")]])
-        await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.MARKDOWN)
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
         return
 
-    text = "📤 **Список активных заявок:**\n\n"
+    text = "📤 <b>Список активных заявок:</b>\n\n"
     kb = []
     for item in items:
         u = await get_user(item["user_id"])
-        uname = f"@{u['username']}" if u else "Н/Д"
+        uname = f"@{html.escape(u['username'])}" if u and u['username'] else "Н/Д"
         st = "🟡 Новая" if item["status"] == "new" else "🟠 Отложена"
         text += f"Заявка #{item['id']} | {uname} | ⭐ {item['amount']} | {st}\n"
         kb.append([InlineKeyboardButton(text=f"Управление #{item['id']} ({item['amount']} ⭐)", callback_data=f"adm_wd_manage:{item['id']}")])
 
     kb.append([InlineKeyboardButton(text=get_str("btn_back", lang), callback_data="admin_main")])
-    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode=ParseMode.MARKDOWN)
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode=ParseMode.HTML)
 
 @router.callback_query(F.data.startswith("adm_wd_manage:"))
 async def process_adm_wd_manage(callback: CallbackQuery):
@@ -1136,14 +1142,17 @@ async def process_adm_wd_manage(callback: CallbackQuery):
     wd = await db_query("SELECT * FROM withdraws WHERE id = ?", (wd_id,), fetchone=True)
 
     u = await get_user(wd["user_id"])
+    c_name = html.escape(u['first_name']) if u and u['first_name'] else 'Н/Д'
+    c_uname = html.escape(u['username']) if u and u['username'] else 'Н/Д'
+
     text = (
-        f"📤 **Управление заявкой #{wd['id']}**\n\n"
-        f"👤 **Имя:** {u['first_name'] if u else 'Н/Д'}\n"
-        f"📛 **Username:** @{u['username'] if u else 'Н/Д'}\n"
-        f"🆔 **ID:** `{wd['user_id']}`\n"
-        f"⭐ **Сумма:** {wd['amount']}\n"
-        f"📅 **Дата:** {wd['created_at']}\n"
-        f"📌 **Статус:** {wd['status']}"
+        f"📤 <b>Управление заявкой #{wd['id']}</b>\n\n"
+        f"👤 <b>Имя:</b> {c_name}\n"
+        f"📛 <b>Username:</b> @{c_uname}\n"
+        f"🆔 <b>ID:</b> <code>{wd['user_id']}</code>\n"
+        f"⭐ <b>Сумма:</b> {wd['amount']}\n"
+        f"📅 <b>Дата:</b> {wd['created_at']}\n"
+        f"📌 <b>Статус:</b> {wd['status']}"
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -1153,7 +1162,7 @@ async def process_adm_wd_manage(callback: CallbackQuery):
         ],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="adm_withdraws_act:1")]
     ])
-    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.MARKDOWN)
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
 
 @router.callback_query(F.data.startswith("adm_wd_approve:"))
 async def process_adm_wd_approve(callback: CallbackQuery):
@@ -1174,7 +1183,7 @@ async def process_adm_wd_approve(callback: CallbackQuery):
     if u:
         try:
             msg = get_str("withdraw_user_notif_ok", u["language"], withdraw_id=wd_id, amount=wd["amount"], currency=get_str("currency", u["language"]))
-            await bot.send_message(u["telegram_id"], msg, parse_mode=ParseMode.MARKDOWN)
+            await bot.send_message(u["telegram_id"], msg, parse_mode=ParseMode.HTML)
         except Exception:
             pass
 
@@ -1200,7 +1209,7 @@ async def process_adm_wd_hold(callback: CallbackQuery):
     if u:
         try:
             msg = get_str("withdraw_user_notif_hold", u["language"], withdraw_id=wd_id, amount=wd["amount"], currency=get_str("currency", u["language"]))
-            await bot.send_message(u["telegram_id"], msg, parse_mode=ParseMode.MARKDOWN)
+            await bot.send_message(u["telegram_id"], msg, parse_mode=ParseMode.HTML)
         except Exception:
             pass
 
@@ -1242,7 +1251,7 @@ async def process_reject_reason_input(message: Message, state: FSMContext):
     if u:
         try:
             msg = get_str("withdraw_user_notif_reject", u["language"], withdraw_id=wd_id, amount=wd["amount"], currency=get_str("currency", u["language"]), reason=reason)
-            await bot.send_message(u["telegram_id"], msg, parse_mode=ParseMode.MARKDOWN)
+            await bot.send_message(u["telegram_id"], msg, parse_mode=ParseMode.HTML)
         except Exception:
             pass
 
@@ -1263,12 +1272,12 @@ async def process_adm_withdraws_history(callback: CallbackQuery):
 
     items = await db_query("SELECT * FROM withdraws ORDER BY id DESC LIMIT 20", fetchall=True)
 
-    text = "📚 **История выводов (Последние 20):**\n\n"
+    text = "📚 <b>История выводов (Последние 20):</b>\n\n"
     for item in items:
-        text += f"#{item['id']} | User: `{item['user_id']}` | ⭐ {item['amount']} | Статус: {item['status']} | {item['created_at'].split('T')[0]}\n"
+        text += f"#{item['id']} | User: <code>{item['user_id']}</code> | ⭐ {item['amount']} | Статус: {item['status']} | {item['created_at'].split('T')[0]}\n"
 
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=get_str("btn_back", lang), callback_data="admin_main")]])
-    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.MARKDOWN)
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
 
 # --- РАССЫЛКА ---
 @router.callback_query(F.data == "adm_broadcast")
@@ -1280,7 +1289,7 @@ async def process_adm_broadcast(callback: CallbackQuery, state: FSMContext):
 
     await callback.answer()
     await state.set_state(AdminFSM.waiting_broadcast_msg)
-    await callback.message.edit_text("📢 Отправьте сообщение для рассылки (поддерживается HTML/Markdown разметка):")
+    await callback.message.edit_text("📢 Отправьте сообщение для рассылки:")
 
 @router.message(AdminFSM.waiting_broadcast_msg)
 async def process_broadcast_msg_input(message: Message, state: FSMContext):
@@ -1289,7 +1298,7 @@ async def process_broadcast_msg_input(message: Message, state: FSMContext):
         [InlineKeyboardButton(text="✅ Отправить", callback_data="adm_broadcast_confirm")],
         [InlineKeyboardButton(text="❌ Отмена", callback_data="admin_main")]
     ])
-    await message.answer("📢 **Предпросмотр рассылки.** Вы уверены, что хотите отправить это сообщение всем пользователям?", reply_markup=kb)
+    await message.answer("📢 <b>Предпросмотр рассылки.</b> Вы уверены, что хотите отправить это сообщение всем пользователям?", reply_markup=kb, parse_mode=ParseMode.HTML)
 
 @router.callback_query(F.data == "adm_broadcast_confirm")
 async def process_adm_broadcast_confirm(callback: CallbackQuery, state: FSMContext):
@@ -1314,9 +1323,9 @@ async def process_adm_broadcast_confirm(callback: CallbackQuery, state: FSMConte
         except Exception:
             errors += 1
 
-    text = f"📢 **Рассылка завершена.**\n\n✅ Успешно отправлено: {success}\n❌ Ошибок доставки: {errors}"
+    text = f"📢 <b>Рассылка завершена.</b>\n\n✅ Успешно отправлено: {success}\n❌ Ошибок доставки: {errors}"
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔙 В админку", callback_data="admin_main")]])
-    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.MARKDOWN)
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
 
 # --- БАН И РАЗБАН ---
 @router.callback_query(F.data == "adm_ban_menu")
@@ -1329,6 +1338,19 @@ async def process_adm_ban_menu(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await state.set_state(AdminFSM.waiting_ban_user_id)
     await callback.message.edit_text("🚫 Введите Telegram ID пользователя для блокировки:")
+
+@router.callback_query(F.data.startswith("adm_user_ban_act:"))
+async def process_adm_user_ban_act(callback: CallbackQuery, state: FSMContext):
+    admin_id = callback.from_user.id
+    if not await has_perm(admin_id, "ban_users"):
+        await callback.answer(get_str("no_permission", "ru"), show_alert=True)
+        return
+
+    await callback.answer()
+    target_id = int(callback.data.split(":")[1])
+    await state.update_data(ban_target_id=target_id)
+    await state.set_state(AdminFSM.waiting_ban_time)
+    await callback.message.edit_text(f"⏳ Укажите срок бана для <code>{target_id}</code> в минутах (или 0 для бессрочного бана):", parse_mode=ParseMode.HTML)
 
 @router.message(AdminFSM.waiting_ban_user_id)
 async def process_ban_user_id_input(message: Message, state: FSMContext):
@@ -1370,12 +1392,12 @@ async def process_ban_reason_input(message: Message, state: FSMContext):
     await log_admin_action(admin_id, target_id, "ban", "0", f"banned until {ban_until_str} ({reason})")
 
     try:
-        await bot.send_message(target_id, get_str("banned_text", "ru", reason=reason))
+        await bot.send_message(target_id, get_str("banned_text", "ru", reason=reason), parse_mode=ParseMode.HTML)
     except Exception:
         pass
 
     await state.clear()
-    await message.answer(f"🚫 Пользователь `{target_id}` успешно заблокирован.", parse_mode=ParseMode.MARKDOWN, reply_markup=await build_admin_main_kb(admin_id, "ru"))
+    await message.answer(f"🚫 Пользователь <code>{target_id}</code> успешно заблокирован.", parse_mode=ParseMode.HTML, reply_markup=await build_admin_main_kb(admin_id, "ru"))
 
 @router.callback_query(F.data.startswith("adm_user_unban_act:"))
 async def process_adm_user_unban_act(callback: CallbackQuery):
@@ -1395,7 +1417,7 @@ async def process_adm_user_unban_act(callback: CallbackQuery):
         pass
 
     await callback.answer("✅ Пользователь разбанен!")
-    await callback.message.edit_text(f"✅ Пользователь `{target_id}` успешно разблокирован.")
+    await callback.message.edit_text(f"✅ Пользователь <code>{target_id}</code> успешно разблокирован.", parse_mode=ParseMode.HTML)
 
 # --- ИЗМЕНЕНИЕ БАЛАНСА (ВЫДАЧА / СПИСАНИЕ) ---
 @router.callback_query(F.data == "adm_balance_menu")
@@ -1420,7 +1442,7 @@ async def process_adm_user_bal_edit(callback: CallbackQuery, state: FSMContext):
     target_id = int(callback.data.split(":")[1])
     await state.update_data(bal_target_id=target_id)
     await state.set_state(AdminFSM.waiting_balance_amount)
-    await callback.message.edit_text(f"⭐ Введите сумму изменения баланса для `{target_id}` (например +5.5 или -2.0):", parse_mode=ParseMode.MARKDOWN)
+    await callback.message.edit_text(f"⭐ Введите сумму изменения баланса для <code>{target_id}</code> в Звездах (например +5.5 или -2.0):", parse_mode=ParseMode.HTML)
 
 @router.message(AdminFSM.waiting_balance_user_id)
 async def process_bal_user_id_input(message: Message, state: FSMContext):
@@ -1432,7 +1454,7 @@ async def process_bal_user_id_input(message: Message, state: FSMContext):
 
     await state.update_data(bal_target_id=target_id)
     await state.set_state(AdminFSM.waiting_balance_amount)
-    await message.answer("⭐ Введите сумму изменения (например +5.5 или -2.0):")
+    await message.answer("⭐ Введите сумму изменения в Звездах (например +5.5 или -2.0):")
 
 @router.message(AdminFSM.waiting_balance_amount)
 async def process_bal_amount_input(message: Message, state: FSMContext):
@@ -1464,8 +1486,8 @@ async def process_bal_amount_input(message: Message, state: FSMContext):
 
     await state.clear()
     await message.answer(
-        f"✅ Баланс пользователя `{target_id}` обновлен!\nБыло: {old_bal:.2f} | Стало: {new_bal:.2f}",
-        parse_mode=ParseMode.MARKDOWN,
+        f"✅ Баланс пользователя <code>{target_id}</code> обновлен!\nБыло: {old_bal:.2f} | Стало: {new_bal:.2f}",
+        parse_mode=ParseMode.HTML,
         reply_markup=await build_admin_main_kb(admin_id, "ru")
     )
 
@@ -1488,15 +1510,15 @@ async def process_adm_modules_menu(callback: CallbackQuery):
     }
 
     kb = []
-    text = "⚙️ **Управление модулями системы:**\n\n"
+    text = "⚙️ <b>Управление модулями системы:</b>\n\n"
     for k, name in mods.items():
         val = await get_setting(k, "1")
         st_icon = "✅" if val == "1" else "❌"
-        text += f"{st_icon} **{name}**\n"
+        text += f"{st_icon} <b>{name}</b>\n"
         kb.append([InlineKeyboardButton(text=f"{st_icon} {name}", callback_data=f"adm_mod_toggle:{k}")])
 
     kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_main")])
-    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode=ParseMode.MARKDOWN)
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode=ParseMode.HTML)
 
 @router.callback_query(F.data.startswith("adm_mod_toggle:"))
 async def process_adm_mod_toggle(callback: CallbackQuery):
@@ -1524,16 +1546,16 @@ async def process_adm_admins_menu(callback: CallbackQuery):
     await callback.answer()
     admins_list = await db_query("SELECT * FROM admins", fetchall=True)
 
-    text = "👮 **Список администраторов:**\n\n"
+    text = "👮 <b>Список администраторов:</b>\n\n"
     kb = []
     for adm in admins_list:
-        text += f"• `{adm['telegram_id']}` (Добавил: `{adm['added_by']}`)\n"
+        text += f"• <code>{adm['telegram_id']}</code> (Добавил: <code>{adm['added_by']}</code>)\n"
         if adm['telegram_id'] != OWNER_ID:
             kb.append([InlineKeyboardButton(text=f"⚙️ Права `{adm['telegram_id']}`", callback_data=f"adm_perm_edit:{adm['telegram_id']}")])
 
     kb.append([InlineKeyboardButton(text="➕ Добавить администратора", callback_data="adm_add_admin")])
     kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="admin_main")])
-    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode=ParseMode.MARKDOWN)
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode=ParseMode.HTML)
 
 @router.callback_query(F.data == "adm_add_admin")
 async def process_adm_add_admin(callback: CallbackQuery, state: FSMContext):
@@ -1562,7 +1584,7 @@ async def process_add_admin_id_input(message: Message, state: FSMContext):
                        (new_admin_id, p))
 
     await state.clear()
-    await message.answer(f"✅ Пользователь `{new_admin_id}` назначен администратором со всеми правами.", reply_markup=await build_admin_main_kb(message.from_user.id, "ru"))
+    await message.answer(f"✅ Пользователь <code>{new_admin_id}</code> назначен администратором со всеми правами.", parse_mode=ParseMode.HTML, reply_markup=await build_admin_main_kb(message.from_user.id, "ru"))
 
 @router.callback_query(F.data.startswith("adm_perm_edit:"))
 async def process_adm_perm_edit(callback: CallbackQuery):
@@ -1578,14 +1600,14 @@ async def process_adm_perm_edit(callback: CallbackQuery):
     perm_dict = {p["permission_name"]: p["enabled"] for p in perms}
 
     kb = []
-    text = f"⚙️ **Управление правами админа `{target_adm_id}`:**\n\n"
+    text = f"⚙️ <b>Управление правами админа <code>{target_adm_id}</code>:</b>\n\n"
     for p in ALL_PERMISSIONS:
         st = "✅" if perm_dict.get(p, 0) == 1 else "❌"
         kb.append([InlineKeyboardButton(text=f"{st} {p}", callback_data=f"adm_perm_toggle:{target_adm_id}:{p}")])
 
     kb.append([InlineKeyboardButton(text="🗑 Удалить администратора", callback_data=f"adm_remove_admin:{target_adm_id}")])
     kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="adm_admins_menu")])
-    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode=ParseMode.MARKDOWN)
+    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode=ParseMode.HTML)
 
 @router.callback_query(F.data.startswith("adm_perm_toggle:"))
 async def process_adm_perm_toggle(callback: CallbackQuery):
@@ -1637,18 +1659,18 @@ async def process_adm_settings_menu(callback: CallbackQuery):
     wd_cd = await get_setting("withdraw_cooldown", "300")
 
     text = (
-        f"⚙️ **Системные Настройки:**\n\n"
-        f"1️⃣ Мин. длина сообщения: `{min_len}` символов\n"
-        f"2️⃣ Антифлуд кулдаун: `{af_cd}` сек.\n"
-        f"3️⃣ Задержка между заявками вывода: `{wd_cd}` сек."
+        f"⚙️ <b>Системные Настройки:</b>\n\n"
+        f"1️⃣ Мин. длина сообщения: <code>{min_len}</code> (в символах)\n"
+        f"2️⃣ Антифлуд задержка: <code>{af_cd}</code> (в секундах)\n"
+        f"3️⃣ Задержка между выводами: <code>{wd_cd}</code> (в секундах)"
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Изменить Мин. длину сообщения", callback_data="adm_set_edit:min_msg_len")],
-        [InlineKeyboardButton(text="Изменить Антифлуд кулдаун", callback_data="adm_set_edit:antiflood_cooldown")],
-        [InlineKeyboardButton(text="Изменить Задержку выводов", callback_data="adm_set_edit:withdraw_cooldown")],
+        [InlineKeyboardButton(text="Изменить Мин. длину (символы)", callback_data="adm_set_edit:min_msg_len")],
+        [InlineKeyboardButton(text="Изменить Антифлуд (секунды)", callback_data="adm_set_edit:antiflood_cooldown")],
+        [InlineKeyboardButton(text="Изменить Задержку вывода (секунды)", callback_data="adm_set_edit:withdraw_cooldown")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_main")]
     ])
-    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.MARKDOWN)
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
 
 @router.callback_query(F.data == "adm_chances_menu")
 async def process_adm_chances_menu(callback: CallbackQuery):
@@ -1661,26 +1683,26 @@ async def process_adm_chances_menu(callback: CallbackQuery):
     main_chance = await get_setting("msg_reward_chance", "15")
 
     text = (
-        f"🎲 **Управление Шансами и Диапазонами:**\n\n"
-        f"🎯 Общий шанс начисления за сообщение: `{main_chance}%`\n\n"
-        f"**Веса выпадения диапазонов (в %):**\n"
-        f"• 0.01-0.10: `{await get_setting('rng_0.01_0.10', '70')}%`\n"
-        f"• 0.10-0.50: `{await get_setting('rng_0.10_0.50', '20')}%`\n"
-        f"• 0.50-1.00: `{await get_setting('rng_0.50_1.00', '7')}%`\n"
-        f"• 1.00-2.00: `{await get_setting('rng_1.00_2.00', '2')}%`\n"
-        f"• 2.00-3.00: `{await get_setting('rng_2.00_3.00', '0.8')}%`\n"
-        f"• 3.00-4.00: `{await get_setting('rng_3.00_4.00', '0.15')}%`\n"
-        f"• 4.00-5.00: `{await get_setting('rng_4.00_5.00', '0.05')}%`"
+        f"🎲 <b>Управление Шансами и Диапазонами:</b>\n\n"
+        f"🎯 Общий шанс начисления за сообщение: <code>{main_chance}%</code> (в процентах)\n\n"
+        f"<b>Веса выпадения диапазонов награды:</b>\n"
+        f"• 0.01-0.10: <code>{await get_setting('rng_0.01_0.10', '70')}</code> (вес/относ. шанс)\n"
+        f"• 0.10-0.50: <code>{await get_setting('rng_0.10_0.50', '20')}</code> (вес/относ. шанс)\n"
+        f"• 0.50-1.00: <code>{await get_setting('rng_0.50_1.00', '7')}</code> (вес/относ. шанс)\n"
+        f"• 1.00-2.00: <code>{await get_setting('rng_1.00_2.00', '2')}</code> (вес/относ. шанс)\n"
+        f"• 2.00-3.00: <code>{await get_setting('rng_2.00_3.00', '0.8')}</code> (вес/относ. шанс)\n"
+        f"• 3.00-4.00: <code>{await get_setting('rng_3.00_4.00', '0.15')}</code> (вес/относ. шанс)\n"
+        f"• 4.00-5.00: <code>{await get_setting('rng_4.00_5.00', '0.05')}</code> (вес/относ. шанс)"
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎯 Общий шанс сообщения", callback_data="adm_set_edit:msg_reward_chance")],
-        [InlineKeyboardButton(text="Изменить диапазон 0.01-0.10", callback_data="adm_set_edit:rng_0.01_0.10")],
-        [InlineKeyboardButton(text="Изменить диапазон 0.10-0.50", callback_data="adm_set_edit:rng_0.10_0.50")],
-        [InlineKeyboardButton(text="Изменить диапазон 0.50-1.00", callback_data="adm_set_edit:rng_0.50_1.00")],
-        [InlineKeyboardButton(text="Изменить диапазон 1.00-2.00", callback_data="adm_set_edit:rng_1.00_2.00")],
+        [InlineKeyboardButton(text="🎯 Общий шанс сообщения (%)", callback_data="adm_set_edit:msg_reward_chance")],
+        [InlineKeyboardButton(text="Диапазон 0.01-0.10 (вес)", callback_data="adm_set_edit:rng_0.01_0.10")],
+        [InlineKeyboardButton(text="Диапазон 0.10-0.50 (вес)", callback_data="adm_set_edit:rng_0.10_0.50")],
+        [InlineKeyboardButton(text="Диапазон 0.50-1.00 (вес)", callback_data="adm_set_edit:rng_0.50_1.00")],
+        [InlineKeyboardButton(text="Диапазон 1.00-2.00 (вес)", callback_data="adm_set_edit:rng_1.00_2.00")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_main")]
     ])
-    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.MARKDOWN)
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
 
 @router.callback_query(F.data == "adm_bonus_menu")
 async def process_adm_bonus_menu(callback: CallbackQuery):
@@ -1694,16 +1716,16 @@ async def process_adm_bonus_menu(callback: CallbackQuery):
     b_max = await get_setting("bonus_max", "2.00")
 
     text = (
-        f"🎁 **Настройки Ежедневного Бонуса:**\n\n"
-        f"🔹 Мин. награда: `{b_min}` Звезд\n"
-        f"🔸 Макс. награда: `{b_max}` Звезд"
+        f"🎁 <b>Настройки Ежедневного Бонуса:</b>\n\n"
+        f"🔹 Мин. награда: <code>{b_min}</code> (в Звездах)\n"
+        f"🔸 Макс. награда: <code>{b_max}</code> (в Звездах)"
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Изменить Мин. бонус", callback_data="adm_set_edit:bonus_min")],
-        [InlineKeyboardButton(text="Изменить Макс. бонус", callback_data="adm_set_edit:bonus_max")],
+        [InlineKeyboardButton(text="Изменить Мин. бонус (Звезды)", callback_data="adm_set_edit:bonus_min")],
+        [InlineKeyboardButton(text="Изменить Макс. бонус (Звезды)", callback_data="adm_set_edit:bonus_max")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="admin_main")]
     ])
-    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.MARKDOWN)
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode=ParseMode.HTML)
 
 @router.callback_query(F.data.startswith("adm_set_edit:"))
 async def process_adm_set_edit(callback: CallbackQuery, state: FSMContext):
@@ -1711,7 +1733,7 @@ async def process_adm_set_edit(callback: CallbackQuery, state: FSMContext):
     key = callback.data.split(":")[1]
     await state.update_data(setting_key=key)
     await state.set_state(AdminFSM.waiting_setting_value)
-    await callback.message.edit_text(f"⚙️ Введите новое значение для `{key}`:", parse_mode=ParseMode.MARKDOWN)
+    await callback.message.edit_text(f"⚙️ Введите новое значение для <code>{key}</code>:", parse_mode=ParseMode.HTML)
 
 @router.message(AdminFSM.waiting_setting_value)
 async def process_setting_value_input(message: Message, state: FSMContext):
@@ -1723,7 +1745,7 @@ async def process_setting_value_input(message: Message, state: FSMContext):
     await log_admin_action(message.from_user.id, 0, f"set_setting_{key}", "", val)
 
     await state.clear()
-    await message.answer(f"✅ Настройка `{key}` успешно изменена на `{val}`.", parse_mode=ParseMode.MARKDOWN, reply_markup=await build_admin_main_kb(message.from_user.id, "ru"))
+    await message.answer(f"✅ Настройка <code>{key}</code> успешно изменена на <code>{val}</code>.", parse_mode=ParseMode.HTML, reply_markup=await build_admin_main_kb(message.from_user.id, "ru"))
 
 # ==============================================================================
 # ЗАПУСК БОТА И MAIN
